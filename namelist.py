@@ -1,4 +1,4 @@
-import os,sys
+import os,sys,rasterio
 
 class Namelist:
 
@@ -47,6 +47,17 @@ class Namelist:
         overwrite_flag          = False
         verbose                 = False
 
+    class ParflowSpatialInformation:
+        """Parflow grid info - see https://hf-hydrodata.readthedocs.io/en/latest/available_grids.html"""
+        conus1_proj      = '+proj=lcc +lat_1=33 +lat_2=45 +lon_0=-96.0 +lat_0=39 +a=6378137.0 +b=6356752.31'
+        conus1_spatext   = tuple([-121.47939483437318, 31.651836025255015, -76.09875469594509, 50.49802132270979])
+        conus1_transform = rasterio.transform.Affine(1000.0,0.0,-1885055.4995,0.0,1000.0,-604957.0654)
+        conus1_shape     = (1888,3342)
+        conus2_proj      = '+proj=lcc +lat_1=30 +lat_2=60 +lon_0=-97.0 +lat_0=40.0000076294444 +a=6370000.0 +b=6370000'
+        conus2_spatext   = tuple([-126.88755692881833, 21.8170599154073, -64.7677149695924, 53.20274381640737])
+        conus2_transform = rasterio.transform.Affine(1000.0,0.0,-2208000.30881173,0.0,1000.0,-1668999.65483222)
+        conus2_shape     = (3256,4442)
+
     def __init__(self,filename:str):
         """Initialize namelist"""
         self._init_vars()
@@ -60,6 +71,7 @@ class Namelist:
         self.fnames   = Namelist.FileNames()
         self.varnames = Namelist.Variables()
         self.options  = Namelist.Options()
+        self.parflow  = Namelist.ParflowSpatialInformation()
         
     def _set_names(self):
         """Set static directory and file names"""
@@ -153,10 +165,12 @@ class Namelist:
         name_hucs             = 'hucs'
         name_overwrite        = 'overwrite'
         name_verbose          = 'verbose'
-        req = [name_project_dir,name_hucs]
+        name_pysda            = 'pysda'
+        req = [name_project_dir,name_hucs,name_pysda]
         for name in req:
             if name not in self.vars.file_inputs: sys.exit('ERROR required variable '+name+' not found in namelist file')
         self.dirnames.project = os.path.abspath(self.vars.file_inputs[name_project_dir])
+        self.dirnames.pysda = os.path.abspath(self.vars.file_inputs[name_pysda])
         self.vars.hucs = self.vars.file_inputs[name_hucs]
         if isinstance(self.vars.hucs,str):
             self.vars.huc_level = len(self.vars.file_inputs[name_hucs])

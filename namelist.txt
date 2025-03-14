@@ -7,5 +7,7 @@ hucs = '051002010506'
 overwrite = False
 #
 verbose = False
+#
+pysda = 'C:\Users\GEVENSON\GitHub\pysda'
 
 
