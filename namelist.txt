@@ -1,4 +1,4 @@
-#
+# User input variables
 # 
 project_directory = 'C:\Users\GEVENSON\Projects\nonperennial_stream_poc'
 #
@@ -9,5 +9,11 @@ overwrite = False
 verbose = False
 #
 pysda = 'C:\Users\GEVENSON\GitHub\pysda'
+#
+dem = 'C:\Users\GEVENSON\Projects\nonperennial_stream_poc\dem_preprocessing\BUCKHORN_CREEK_2M_DEM.tiff'
+#
+start_date = '2002-10-01'
+#
+end_date = '2006-09-30'
 
 

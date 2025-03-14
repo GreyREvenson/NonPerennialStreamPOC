@@ -39,8 +39,11 @@ class Namelist:
         twi_downsample          = ''
 
     class Variables:
+        """Variables"""
         hucs                    = ''
         huc_level               = ''
+        start_date              = ''
+        end_date                = ''
 
     class Options:
         """Options"""
@@ -69,7 +72,7 @@ class Namelist:
         """Initialize variables"""
         self.dirnames = Namelist.DirectoryNames()
         self.fnames   = Namelist.FileNames()
-        self.varnames = Namelist.Variables()
+        self.vars     = Namelist.Variables()
         self.options  = Namelist.Options()
         self.parflow  = Namelist.ParflowSpatialInformation()
         
@@ -166,11 +169,18 @@ class Namelist:
         name_overwrite        = 'overwrite'
         name_verbose          = 'verbose'
         name_pysda            = 'pysda'
-        req = [name_project_dir,name_hucs,name_pysda]
+        name_dem              = 'dem'
+        name_start_date       = 'start_date'
+        name_end_date         = 'end_date'
+        req = [name_project_dir,name_hucs,name_pysda,name_start_date,name_end_date]
         for name in req:
             if name not in self.vars.file_inputs: sys.exit('ERROR required variable '+name+' not found in namelist file')
         self.dirnames.project = os.path.abspath(self.vars.file_inputs[name_project_dir])
         self.dirnames.pysda = os.path.abspath(self.vars.file_inputs[name_pysda])
+        self.vars.start_date = self.vars.file_inputs[name_start_date]
+        self.vars.end_date = self.vars.file_inputs[name_end_date]
+        if name_dem in self.vars.file_inputs:
+            self.fnames.dem = os.path.abspath(self.vars.file_inputs[name_dem])
         self.vars.hucs = self.vars.file_inputs[name_hucs]
         if isinstance(self.vars.hucs,str):
             self.vars.huc_level = len(self.vars.file_inputs[name_hucs])
