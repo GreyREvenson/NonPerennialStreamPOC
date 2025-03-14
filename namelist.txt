@@ -1,0 +1,11 @@
+#
+# 
+project_directory = 'C:\Users\GEVENSON\Projects\nonperennial_stream_poc'
+#
+hucs = '051002010506'
+#
+overwrite = False
+#
+verbose = False
+
+
