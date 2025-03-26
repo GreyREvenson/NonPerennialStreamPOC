@@ -1,4 +1,4 @@
-import os,sys,pandas,shutil,math,datetime,numpy,py3dep,pygeohydro,pynhd,whitebox_workflows,hf_hydrodata,rasterio,soiltexture,folium
+import os,sys,pandas,shutil,math,datetime,numpy,py3dep,pygeohydro,pynhd,whitebox_workflows,hf_hydrodata,rasterio,soiltexture,folium,geopandas,yaml
 
 class Namelist:
 
@@ -26,7 +26,7 @@ class Namelist:
 
     class FileNames:
         """File names including full path"""
-        namelist                = ''
+        namlistyaml             = ''
         hucs                    = ''
         domain                  = ''
         domain_mask             = ''
@@ -49,6 +49,7 @@ class Namelist:
         huc_level               = ''
         start_date              = ''
         end_date                = ''
+        namelist                = ''
 
     class Options:
         """Options"""
@@ -83,11 +84,10 @@ class Namelist:
               'sand'           :2.1,
               'organic'        :2.5}
 
-    def __init__(self,filename:str=None):
+    def __init__(self,filename:str):
         """Initialize namelist"""
         self._init_vars()
-        
-        self._read_namelist(filename)
+        self._read_inputyaml(filename)
         self._set_user_inputs()
         self._set_names()
         self._make_subdirectory_structure()
@@ -149,53 +149,12 @@ class Namelist:
         self.fnames.twi_upsample        = os.path.join(self.dirnames.twi,'twi_upsample.tif')
         self.fnames.twi_downsample      = os.path.join(self.dirnames.twi,'twi_downsample.tif')
 
-    def _remove_whitespace_outside_quotes(self,line:str):
-        result = []
-        in_quote = False
-        quote_char = None
-        for char in line:
-            if char in ('"', "'"):
-                if in_quote and quote_char == char:
-                    in_quote = False
-                else:
-                    in_quote = True
-                    quote_char = char
-                result.append(char)
-            elif not in_quote and char.isspace():
-                continue
-            else:
-                result.append(char)
-        return ''.join(result)
-
-    def _read_namelist(self,filename:str):
-        """Read namelist file into generic dictionary"""
-        self.fnames.namelist = filename
-        if not os.path.isfile(self.fnames.namelist):
-            sys.exit('ERROR could not find namelist file '+self.fnames.namelist)
-        self.vars.file_inputs = dict()
-        namelist_lines = list(open(self.fnames.namelist,'r'))
-        for l in namelist_lines:
-            try:
-                l0 = self._remove_whitespace_outside_quotes(line=l)
-                if len(l0) > 0:
-                    if str(l[0:1]).find('#') == -1:
-                        l1 = l0.split('=')
-                        var_name = str(l1[0])
-                        var_vals = str(l1[1])
-                        var_vals = var_vals.split(',')
-                        for i in range(len(var_vals)):
-                            val = var_vals[i]
-                            if val.startswith("'") and val.endswith("'"):
-                                val = val[1:len(val)-1]
-                            elif val.startswith('"') and val.endswith('"'):
-                                val = val[1:len(val)-1]
-                            var_vals[i] = val
-                        self.vars.file_inputs[var_name] = var_vals
-            except:
-                sys.exit('ERROR could not read namelist.txt line: '+l)
-        for var_name in self.vars.file_inputs:
-            if isinstance(self.vars.file_inputs[var_name],list) and len(self.vars.file_inputs[var_name]) == 1:
-                self.vars.file_inputs[var_name] = self.vars.file_inputs[var_name][0]
+    def _read_inputyaml(self):
+        with open(self.fnames.namlistyaml,'r') as yamlf:
+            try: 
+                self.vars.namelist = yaml.safe_load(yamlf)
+            except yaml.YAMLError as exc: 
+                print(exc)
 
     def _set_user_inputs(self):
         """Set variables using read-in values"""
@@ -209,21 +168,21 @@ class Namelist:
         name_end_date         = 'end_date'
         req = [name_project_dir,name_hucs,name_pysda,name_start_date,name_end_date]
         for name in req:
-            if name not in self.vars.file_inputs: sys.exit('ERROR required variable '+name+' not found in namelist file')
-        self.dirnames.project = os.path.abspath(self.vars.file_inputs[name_project_dir])
-        self.dirnames.pysda = os.path.abspath(self.vars.file_inputs[name_pysda])
-        self.vars.start_date = self.vars.file_inputs[name_start_date]
-        self.vars.end_date = self.vars.file_inputs[name_end_date]
-        if name_dem in self.vars.file_inputs:
-            self.fnames.dem_user = os.path.abspath(self.vars.file_inputs[name_dem])
-        self.vars.hucs = self.vars.file_inputs[name_hucs]
+            if name not in self.vars.namelist: sys.exit('ERROR required variable '+name+' not found in namelist file')
+        self.dirnames.project = os.path.abspath(self.vars.namelist[name_project_dir])
+        self.dirnames.pysda = os.path.abspath(self.vars.namelist[name_pysda])
+        self.vars.start_date = self.vars.namelist[name_start_date]
+        self.vars.end_date = self.vars.namelist[name_end_date]
+        if name_dem in self.vars.namelist:
+            self.fnames.dem_user = os.path.abspath(self.vars.namelist[name_dem])
+        self.vars.hucs = self.vars.namelist[name_hucs]
         if isinstance(self.vars.hucs,str): self.vars.hucs = [self.vars.hucs]
         levs = [len(self.vars.hucs[i]) for i in range(len(self.vars.hucs))]
         if len(set(levs)) != 1 or levs[0] not in [2,4,6,8,10,12]: sys.exit('ERROR invalid huc level in namelist file')
         self.vars.huc_level = levs[0]
-        if name_overwrite in self.vars.file_inputs and self.vars.file_inputs[name_overwrite].upper().find('TRUE') != -1:
+        if name_overwrite in self.vars.namelist and self.vars.namelist[name_overwrite] is True:
             self.vars.overwrite_flag = True
-        if name_verbose in self.vars.file_inputs and self.vars.file_inputs[name_verbose].upper().find('TRUE') != -1:
+        if name_verbose in self.vars.namelist and self.vars.namelist[name_verbose] is True:
             self.vars.verbose = True
 
 class Domain:
@@ -252,9 +211,6 @@ class Domain:
         conus2grid_maxx = ''
         conus2grid_maxy = ''
 
-    class Visualization:
-
-
     def __init__(self,namelist:Namelist):
         """init"""
         self._init_vars()
@@ -264,14 +220,14 @@ class Domain:
         self._set_domain_bbox(namelist)
         self._set_parflow_bbox(namelist)
 
-    def get_wtd_data(self,namelist:Namelist):
+    def get_wtd(self,namelist:Namelist):
         """Get water table depth data for domain"""
         self._get_raw_parflow_wtd(namelist)
         #self._get_fan2013_data(namelist) need to fix
         self._increase_wtd_resolution(namelist)
         self._get_domain_mask(namelist)
 
-    def get_twi_and_transmissivity_data(self,namelist:Namelist):
+    def get_twi(self,namelist:Namelist):
         """Create TWI and transmissivity data for domain"""
         self._get_dem(namelist)
         self._project_dem(namelist)
@@ -281,6 +237,10 @@ class Domain:
         self._calc_twi(namelist)
         self._upsample_twi(namelist)
         self._downsample_twi(namelist)
+
+    def get_soils(self,namelist:Namelist):
+        """Get soil texture and transmissivity data for domain"""
+        self._get_soil_texture(namelist=namelist)
         self._get_soil_transmissivity(namelist=namelist)
 
     def _init_vars(self):
@@ -311,6 +271,7 @@ class Domain:
         self.spatial.domain = wbdbasins.dissolve()
         self.spatial.domain.to_file(namelist.fnames.domain, driver="GPKG")
         del wbdbasins
+        
 
     def _set_nhd_flowlines(self,namelist:Namelist):
         """Set domain nhd flowlines"""
@@ -423,35 +384,40 @@ class Domain:
                 with rasterio.open(namelist.fnames.domain_mask, 'w', **domain_meta) as dst:
                     dst.write(domain_mask,indexes=1)
 
-    def _get_soil_transmissivity(self,namelist:Namelist):
-        """Get soil transmissivity - uses pysda via https://github.com/ncss-tech/pysda.git"""
-        if not os.path.isfile(namelist.fnames.soil_transmissivity) or namelist.options.overwrite_flag:
+    def _get_soil_texture(self,namelist:Namelist):
+        """Get soil texture - uses pysda via https://github.com/ncss-tech/pysda.git"""
+        if not os.path.isfile(namelist.fnames.soil_texture) or namelist.options.overwrite_flag:
             if namelist.dirnames.pysda not in sys.path: sys.path.append(namelist.dirnames.pysda)
             import sdapoly, sdaprop
             soils_aoi = sdapoly.gdf(self.spatial.domain)
             sandtotal_r=sdaprop.getprop(df=soils_aoi,column='mukey',method='dom_comp_num',top=0,bottom=400,prop='sandtotal_r',minmax=None,prnt=False,meta=False)
             claytotal_r=sdaprop.getprop(df=soils_aoi,column='mukey',method='dom_comp_num',top=0,bottom=400,prop='claytotal_r',minmax=None,prnt=False,meta=False)
-            soils_aoi = soils_aoi.merge(pandas.merge(sandtotal_r,claytotal_r,on='mukey'),on='mukey')
+            soils_texture = soils_aoi.merge(pandas.merge(sandtotal_r,claytotal_r,on='mukey'),on='mukey')
             def calc_texture(row): 
                 try: sand = float(row['sandtotal_r'])
                 except: return 'None'
                 try: clay = float(row['claytotal_r'])
                 except: return 'None'
                 return soiltexture.getTexture(sand,clay)
-            soils_aoi['texture'] = soils_aoi.apply(calc_texture, axis=1)
+            soils_texture['texture'] = soils_texture.apply(calc_texture, axis=1)
+            soils_texture.to_crs('EPSG:4326').to_file(namelist.fnames.soil_texture, driver="GPKG")
+
+    def _get_soil_transmissivity(self,namelist:Namelist):
+        if not os.path.isfile(namelist.fnames.soil_transmissivity) or namelist.options.overwrite_flag:
+            soil_texture = geopandas.read_file(namelist.fnames.soil_texture)
             def calc_f(row):
                 if row['texture'] in namelist.soil_transmissivity.dt: return namelist.soil_transmissivity.dt[row['texture']]
                 else: 
                     muname = str(row['muname']).upper()
                     if muname.find('WATER') != -1 or muname.find('DAM') != -1: return numpy.mean(list(namelist.soil_transmissivity.dt.values()))
                     else: sys.exit('ERROR: Could not find transmissivity decay factor for soil texture '''+muname+"'")
-            soils_aoi['f'] = soils_aoi.apply(calc_f, axis=1)
+            soil_texture['f'] = soil_texture.apply(calc_f, axis=1)
+            soil_texture.to_file(namelist.fnames.soil_texture) # save f values to disc
             with rasterio.open(self._get_dummy_hrwtd_fname(namelist),'r') as wtd_highres:
                 dummy_meta = wtd_highres.meta
                 dummy_data = wtd_highres.read(1)
-                soils_aoi = soils_aoi.to_crs(wtd_highres.crs)
-                soils_aoi.to_crs('EPSG:4326').to_file(namelist.fnames.soil_texture, driver="GPKG")
-                soils_shapes = ((geom,value) for geom, value in zip(soils_aoi.geometry, soils_aoi['f']))
+                soil_texture = soil_texture.to_crs(wtd_highres.crs)
+                soils_shapes = ((geom,value) for geom, value in zip(soil_texture.geometry, soil_texture['f']))
                 texture_data = rasterio.features.rasterize(shapes=soils_shapes,out_shape=dummy_data.shape,transform=wtd_highres.transform,fill=numpy.nan,all_touched=True,dtype=rasterio.float32,default_value=numpy.nan)
                 dummy_meta.update({"driver": "GTiff","height": dummy_data.shape[0],"width": dummy_data.shape[1],"transform": wtd_highres.transform,"dtype": rasterio.float32,"nodata":numpy.nan})
                 with rasterio.open(namelist.fnames.soil_transmissivity, 'w', **dummy_meta) as dst:

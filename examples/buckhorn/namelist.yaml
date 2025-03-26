@@ -1,0 +1,24 @@
+# 
+# Main project directory
+project_directory: 'C:\Users\GEVENSON\Projects\nonperennial_stream_poc\buckhorn'
+#
+# HUC ids to define the domain
+hucs: '051002010506'
+#
+# Overwrite/recreate intermediate data outputs
+overwrite: False
+#
+# Print additional model messages 
+verbose: False
+#
+# path to pysda python module used to get soil data - downloadable from https://github.com/ncss-tech/pysda
+pysda: 'C:\Users\GEVENSON\GitHub\pysda'
+#
+# path to optional dem input - model will otherwise download and use 10m USGS NED DEM
+dem: 'C:\Users\GEVENSON\GitHub\NonPerennialStreamPOC\examples\buckhorn\inputs\DEM\preprocessing\BUCKHORN_CREEK_2M_DEM.tiff'
+#
+# start date for analysis - must be within parflow simulation period
+start_date: '2002-10-01'
+#
+# end date for analysis - must be within parflow simulation period
+end_date: '2006-09-30'
