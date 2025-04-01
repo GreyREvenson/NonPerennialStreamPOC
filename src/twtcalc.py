@@ -46,7 +46,6 @@ def _calc_parflow_inundation_main(namelist:twtnamelist.Namelist):
             wtd_dir = namelist.dirnames.wtd_parflow_cubic
             out_dir = namelist.dirnames.output_cubic
         for idatetime in namelist.time.datetime_dim:
-            if namelist.options.verbose: print('    ')
             fname_wtd_mean = os.path.join(wtd_dir,'wtd_'+idatetime.strftime('%Y%m%d')+'.tiff')
             fname_output = os.path.join(out_dir,'inundatedarea_'+idatetime.strftime('%Y%m%d')+'.tiff')
             if os.path.isfile(fname_wtd_mean):
