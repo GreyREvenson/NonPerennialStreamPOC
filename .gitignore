@@ -163,3 +163,5 @@ cython_debug/
 
 examples/buckhorn/inputs/*
 examples/buckhorn/outputs/*
+examples/buckhorn/execution/cache
+examples/buckhorn/visualization/cache
