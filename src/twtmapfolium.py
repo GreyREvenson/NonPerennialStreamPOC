@@ -1,4 +1,4 @@
-import os,sys,twtnamelist,folium,rasterio,geopandas,branca,numpy    
+import os,sys,twtnamelist,folium,geopandas,branca,numpy,rasterio,rasterio.warp,rasterio.io
  
 def get_fmap_transmissivity(namelist:twtnamelist.Namelist):
     """Get folium map of transmissivity values"""
@@ -83,7 +83,7 @@ def _get_fmap_image(namelist:twtnamelist.Namelist, instructions:dict):
     folium.LayerControl().add_to(imap)
     return imap
 
-def get_fmap_texture(domain:twtnamelist.Domain, namelist:twtnamelist.Namelist):
+def get_fmap_texture(namelist:twtnamelist.Namelist):
     domainfg        = _get_fmap_domainfg(namelist)
     nhdfg           = _get_fmap_nhdfg(namelist)
     domain_centroid = _get_fmap_centroid(namelist)
@@ -97,7 +97,8 @@ def get_fmap_texture(domain:twtnamelist.Domain, namelist:twtnamelist.Namelist):
         for index, row in texture_group.iterrows():
             folium.GeoJson(
                 data=geopandas.GeoSeries(row['geometry']).to_json(),
-                style_function=lambda x, color=texture_colors[texture]: {"fillColor": color, "color": "black", "fillOpacity": 1.0}
+                style_function=lambda x, 
+                color=texture_colors[texture]: {"fillColor": color, "color": "black", "fillOpacity": 1.0}
             ).add_to(soilsfg)
     soilsfg.add_to(imap)
     html_legend = """
