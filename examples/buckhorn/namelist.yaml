@@ -1,9 +1,9 @@
 # 
 # Main project directory
-project_directory: 'C:\Users\GEVENSON\Projects\nonperennial_stream_poc\buckhorn'
+project_directory: 'C:\Users\GEVENSON\GitHub\NonPerennialStreamPOC\examples\buckhorn'
 #
-# HUC ids to define the domain
-hucs: '051002010506'
+# HUC id to define the domain
+huc: '051002010506'
 #
 # Overwrite/recreate intermediate data outputs
 overwrite: False

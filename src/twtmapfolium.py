@@ -15,7 +15,7 @@ def get_fmap_twi(namelist:twtnamelist.Namelist):
 def get_fmap_slope(namelist:twtnamelist.Namelist):
     """Get folium map of slope values"""
     if not os.path.isfile(namelist.fnames.slope): sys.exit('ERROR get_fmap_slope could not find '+namelist.fnames.slope)
-    instructions = {'Slope (degrees)': [namelist.fnames.slope, branca.colormap.linear.viridis]}
+    instructions = {'Slope (degrees)': [namelist.fnames.slope, branca.colormap.linear.Greys_07]}
     return _get_fmap_image(namelist=namelist,instructions=instructions)
 
 def get_fmap_flowacc(namelist:twtnamelist.Namelist):
@@ -28,9 +28,23 @@ def get_fmap_dem(namelist:twtnamelist.Namelist):
     """Get folium map of digital elevation models (DEMs)"""
     if not os.path.isfile(namelist.fnames.dem):          sys.exit('ERROR get_fmap_dem could not find '+namelist.fnames.dem)
     if not os.path.isfile(namelist.fnames.dem_breached): sys.exit('ERROR get_fmap_dem could not find '+namelist.fnames.dem_breached)
-    instructions = {'DEM (m)': [namelist.fnames.dem, branca.colormap.linear.viridis],
-                    'DEM (breached) (m)': [namelist.fnames.dem_breached, branca.colormap.linear.viridis]}
+    instructions = {'DEM (m)': [namelist.fnames.dem, branca.colormap.linear.Greys_07],
+                    'DEM (breached) (m)': [namelist.fnames.dem_breached, branca.colormap.linear.Greys_07]}
     return _get_fmap_image(namelist=namelist,instructions=instructions)
+
+def get_fmap_meanwtd(namelist:twtnamelist.Namelist,method='bilinear'):
+    """Get folium map of mean WTD values"""
+    if method == 'bilinear':  wtd_dir = namelist.dirnames.wtd_parflow_bilinear
+    elif method == 'nearest': wtd_dir = namelist.dirnames.wtd_parflow_nearest
+    elif method == 'cubic':   wtd_dir = namelist.dirnames.wtd_parflow_cubic
+    else:                     sys.exit('ERROR unrecognized wtd smoothing method')
+    start_string = namelist.time.datetime_dim[0].strftime('%Y%m%d')
+    end_string   = namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d')
+    fname_mean_wtd = os.path.join(wtd_dir,'mean_wtd_'+start_string+'_to_'+end_string+'.tiff')
+    if not os.path.isfile(fname_mean_wtd): sys.exit('ERROR get_fmap_meanwtd could not find '+fname_mean_wtd)
+    instructions = {'Water table depth (m)': [fname_mean_wtd, branca.colormap.linear.viridis]}
+    return _get_fmap_image(namelist=namelist,instructions=instructions)
+
 
 def _get_fmap_image(namelist:twtnamelist.Namelist, instructions:dict):
     """Generic folium map construction for images - instructions = {variable_name: [file_name, branca.colormap]}"""
