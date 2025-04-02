@@ -45,6 +45,21 @@ def get_fmap_meanwtd(namelist:twtnamelist.Namelist,method='bilinear'):
     instructions = {'Water table depth (m)': [fname_mean_wtd, branca.colormap.linear.viridis]}
     return _get_fmap_image(namelist=namelist,instructions=instructions)
 
+def get_fmap_percinundated(namelist:twtnamelist.Namelist,method='bilinear'):
+    """Get folium map of mean WTD values"""
+    if method == 'bilinear':  out_dir = namelist.dirnames.output_summary_bilinear
+    elif method == 'nearest': out_dir = namelist.dirnames.output_summary_nearest
+    elif method == 'cubic':   out_dir = namelist.dirnames.output_summary_cubic
+    else:                     sys.exit('ERROR unrecognized wtd smoothing method')
+    fname_percinundated = ['percent_inundated_grid_',
+                           namelist.time.datetime_dim[0].strftime('%Y%m%d'),
+                           '_to_',
+                           namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
+                           '.tiff']
+    fname_percinundated = os.path.join(out_dir,"".join(fname_percinundated))
+    if not os.path.isfile(fname_percinundated): sys.exit('ERROR get_fmap_meanwtd could not find '+fname_percinundated)
+    instructions = {'Percent Inundated': [fname_percinundated, branca.colormap.linear.Reds_08]}
+    return _get_fmap_image(namelist=namelist,instructions=instructions)
 
 def _get_fmap_image(namelist:twtnamelist.Namelist, instructions:dict):
     """Generic folium map construction for images - instructions = {variable_name: [file_name, branca.colormap]}"""

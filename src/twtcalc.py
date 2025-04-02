@@ -6,6 +6,12 @@ def calc_parflow_inundation(namelist:twtnamelist.Namelist):
     _calc_parflow_inundation_main(namelist)
     _calc_parflow_inundation_summary(namelist)
 
+def _calc_parflow_inundation_summary(namelist:twtnamelist.Namelist):
+    """Calculate summary grids"""
+    if namelist.options.verbose: print('calling _calc_parflow_inundation_summary')
+    _calc_parflow_inundation_summary_perc_inundated(namelist)
+    _calc_parflow_inundation_summary_zerowtd(namelist)
+
 def _calc_parflow_inundation_time_i(wtd_mean,twi_local,twi_mean,f,domain_mask):
     """Calculate inundation using 
     TOPMODEL-based equation - see Equation 3 of Zhang et al. (2016) (https://doi.org/10.5194/bg-13-1387-2016)
@@ -38,13 +44,13 @@ def _calc_parflow_inundation_main(namelist:twtnamelist.Namelist):
     for method in ['bilinear','nearest','cubic']:
         if method == 'bilinear': 
             wtd_dir = namelist.dirnames.wtd_parflow_bilinear
-            out_dir = namelist.dirnames.output_bilinear
+            out_dir = namelist.dirnames.output_raw_bilinear
         elif method == 'nearest': 
             wtd_dir = namelist.dirnames.wtd_parflow_nearest
-            out_dir = namelist.dirnames.output_neareast
+            out_dir = namelist.dirnames.output_raw_neareast
         elif method == 'cubic': 
             wtd_dir = namelist.dirnames.wtd_parflow_cubic
-            out_dir = namelist.dirnames.output_cubic
+            out_dir = namelist.dirnames.output_raw_cubic
         for idatetime in namelist.time.datetime_dim:
             fname_wtd_mean = os.path.join(wtd_dir,'wtd_'+idatetime.strftime('%Y%m%d')+'.tiff')
             fname_output = os.path.join(out_dir,'inundatedarea_'+idatetime.strftime('%Y%m%d')+'.tiff')
@@ -56,20 +62,20 @@ def _calc_parflow_inundation_main(namelist:twtnamelist.Namelist):
                         with rasterio.open(fname_output, "w", **wtd_mean_dataset.meta) as wtd_local_dataset:
                             wtd_local_dataset.write(wtd_local,1)
 
-def _calc_parflow_inundation_summary(namelist:twtnamelist.Namelist):
-    """Calculate summary grids"""
-    if namelist.options.verbose: print('calling _calc_parflow_inundation_summary')
-    _calc_parflow_inundation_summary_perc_inundated(namelist)
-    _calc_parflow_inundation_summary_zerowtd(namelist)
-
 def _calc_parflow_inundation_summary_perc_inundated(namelist:twtnamelist.Namelist):
     """Calculate summary grid of inundated area"""
     if namelist.options.verbose: print('calling _calc_parflow_inundation_summary_perc_inundated')
     domain_mask = rasterio.open(namelist.fnames.domain_mask,'r').read(1)
     for method in ['bilinear','nearest','cubic']:
-        if method == 'bilinear': out_dir = namelist.dirnames.output_bilinear
-        elif method == 'nearest': out_dir = namelist.dirnames.output_neareast
-        elif method == 'cubic': out_dir = namelist.dirnames.output_cubic
+        if method == 'bilinear': 
+            out_dir = namelist.dirnames.output_summary_bilinear
+            raw_dir = namelist.dirnames.output_raw_bilinear
+        elif method == 'nearest': 
+            out_dir = namelist.dirnames.output_summary_nearest
+            raw_dir = namelist.dirnames.output_raw_neareast
+        elif method == 'cubic':
+            out_dir = namelist.dirnames.output_summary_cubic
+            raw_dir = namelist.dirnames.output_raw_cubic
         fname_output = ['percent_inundated_grid_',
                         namelist.time.datetime_dim[0].strftime('%Y%m%d'),
                         '_to_',
@@ -77,28 +83,31 @@ def _calc_parflow_inundation_summary_perc_inundated(namelist:twtnamelist.Namelis
                         '.tiff']
         fname_output = os.path.join(out_dir,"".join(fname_output))
         if not os.path.isfile(fname_output) or namelist.options.overwrite_flag:
-            wflag = True
-            count = numpy.where(domain_mask==1,0,numpy.nan)
+            count   = 0
+            sumgrid = numpy.where(domain_mask==1,0,numpy.nan)
+            total   = int((namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1] - namelist.time.datetime_dim[0]).days)+1
             for idatetime in namelist.time.datetime_dim:
-                fname_wtd_local = os.path.join(out_dir,'inundatedarea_'+idatetime.strftime('%Y%m%d')+'.tiff') 
+                fname_wtd_local = os.path.join(raw_dir,'inundatedarea_'+idatetime.strftime('%Y%m%d')+'.tiff') 
                 if os.path.isfile(fname_wtd_local):
                     inundation_data = rasterio.open(fname_wtd_local,'r').read(1)
-                    count += numpy.where(inundation_data==1,1,0)
+                    sumgrid += numpy.where(inundation_data==1,1,0)
+                    count += 1
                 else:
-                    wflag = False
                     break
-            if wflag:
-                count = numpy.where(count==0,numpy.nan,count)
-                with rasterio.open(fname_output, "w", **rasterio.open(namelist._get_dummy_hrwtd_fname(),'r').meta) as summary_dataset:
-                    summary_dataset.write(count,1)
+            if count > 0:
+                if count != total: sys.exit('ERROR _calc_parflow_inundation_summary_perc_inundated count='+str(count)+' total='+str(total))
+                perc_inundated = (sumgrid/float(total))/100.
+                perc_inundated = numpy.where(domain_mask==1,perc_inundated,numpy.nan)
+                with rasterio.open(fname_output, "w", **rasterio.open(namelist._get_dummy_hrwtd_fname(),'r').meta) as output_dataset:
+                    output_dataset.write(perc_inundated,1)
 
 def _calc_parflow_inundation_summary_zerowtd(namelist:twtnamelist.Namelist):
     """Calculate zero water table depth"""
     if namelist.options.verbose: print('calling _calc_parflow_inundation_summary_zerowtd')
     for method in ['bilinear','nearest','cubic']:
-        if method == 'bilinear': out_dir = namelist.dirnames.output_bilinear
-        elif method == 'nearest': out_dir = namelist.dirnames.output_neareast
-        elif method == 'cubic': out_dir = namelist.dirnames.output_cubic
+        if method == 'bilinear': out_dir = namelist.dirnames.output_summary_bilinear
+        elif method == 'nearest': out_dir = namelist.dirnames.output_summary_nearest
+        elif method == 'cubic': out_dir = namelist.dirnames.output_summary_cubic
         fname_output = os.path.join(out_dir,'mean_wtd_if_local_wtd_equals_0.tiff')
         if not os.path.isfile(fname_output) or namelist.options.overwrite_flag:
             domain_mask        = rasterio.open(namelist.fnames.domain_mask,'r').read(1)

@@ -20,9 +20,14 @@ class Namelist:
         nhd                     = '' 
         pysda                   = ''
         output                  = ''
-        output_bilinear         = ''
-        output_neareast         = ''
-        output_cubic            = ''
+        output_raw              = ''
+        output_raw_bilinear     = ''
+        output_raw_neareast     = ''
+        output_raw_cubic        = ''
+        output_summary          = ''
+        output_summary_bilinear = ''
+        output_summary_nearest  = ''
+        output_summary_cubic    = ''
 
     class Time:
         start_date              = ''
@@ -133,23 +138,28 @@ class Namelist:
 
     def _set_subdirectory_names(self):
         """Set project subdirectory names"""
-        self.dirnames.inputs                  = os.path.join(self.dirnames.project,'inputs')
-        self.dirnames.wtd                     = os.path.join(self.dirnames.inputs,'wtd')
-        self.dirnames.wtd_parflow             = os.path.join(self.dirnames.wtd,'parflow')
-        self.dirnames.wtd_parflow_raw         = os.path.join(self.dirnames.wtd_parflow,'raw')
-        self.dirnames.wtd_parflow_bilinear    = os.path.join(self.dirnames.wtd_parflow,'bilinear')
-        self.dirnames.wtd_parflow_nearest     = os.path.join(self.dirnames.wtd_parflow,'nearest')
-        self.dirnames.wtd_parflow_cubic       = os.path.join(self.dirnames.wtd_parflow,'cubic')
-        self.dirnames.wtd_fan                 = os.path.join(self.dirnames.wtd,'fan')
-        self.dirnames.dem                     = os.path.join(self.dirnames.inputs,'dem')
-        self.dirnames.twi                     = os.path.join(self.dirnames.inputs,'twi')
-        self.dirnames.soils                   = os.path.join(self.dirnames.inputs,'soils')
-        self.dirnames.domain                  = os.path.join(self.dirnames.inputs,'domain')
-        self.dirnames.nhd                     = os.path.join(self.dirnames.inputs,'nhd')
-        self.dirnames.output                  = os.path.join(self.dirnames.project,'outputs')
-        self.dirnames.output_bilinear         = os.path.join(self.dirnames.output,'bilinear')
-        self.dirnames.output_neareast         = os.path.join(self.dirnames.output,'nearest')
-        self.dirnames.output_cubic            = os.path.join(self.dirnames.output,'cubic')
+        self.dirnames.inputs                  = os.path.join(self.dirnames.project,                 'inputs')
+        self.dirnames.wtd                     = os.path.join(self.dirnames.inputs,                  'wtd')
+        self.dirnames.wtd_parflow             = os.path.join(self.dirnames.wtd,                     'parflow')
+        self.dirnames.wtd_parflow_raw         = os.path.join(self.dirnames.wtd_parflow,             'raw')
+        self.dirnames.wtd_parflow_bilinear    = os.path.join(self.dirnames.wtd_parflow,             'bilinear')
+        self.dirnames.wtd_parflow_nearest     = os.path.join(self.dirnames.wtd_parflow,             'nearest')
+        self.dirnames.wtd_parflow_cubic       = os.path.join(self.dirnames.wtd_parflow,             'cubic')
+        self.dirnames.wtd_fan                 = os.path.join(self.dirnames.wtd,                     'fan')
+        self.dirnames.dem                     = os.path.join(self.dirnames.inputs,                  'dem')
+        self.dirnames.twi                     = os.path.join(self.dirnames.inputs,                  'twi')
+        self.dirnames.soils                   = os.path.join(self.dirnames.inputs,                  'soils')
+        self.dirnames.domain                  = os.path.join(self.dirnames.inputs,                  'domain')
+        self.dirnames.nhd                     = os.path.join(self.dirnames.inputs,                  'nhd')
+        self.dirnames.output                  = os.path.join(self.dirnames.project,                 'outputs')
+        self.dirnames.output_raw              = os.path.join(self.dirnames.output,                  'raw')
+        self.dirnames.output_raw_bilinear     = os.path.join(self.dirnames.output_raw,              'bilinear')
+        self.dirnames.output_raw_neareast     = os.path.join(self.dirnames.output_raw,              'nearest')
+        self.dirnames.output_raw_cubic        = os.path.join(self.dirnames.output_raw,              'cubic')
+        self.dirnames.output_summary          = os.path.join(self.dirnames.output,                  'summary')
+        self.dirnames.output_summary_bilinear = os.path.join(self.dirnames.output_summary,          'bilinear')
+        self.dirnames.output_summary_nearest  = os.path.join(self.dirnames.output_summary,          'nearest')
+        self.dirnames.output_summary_cubic    = os.path.join(self.dirnames.output_summary,          'cubic')
 
     def _make_subdirectory_structure(self):
         """Make subdirectory structure"""
@@ -159,21 +169,21 @@ class Namelist:
 
     def _set_file_names(self):
         """Set static files names for intermediate output files"""
-        self.fnames.domain              = os.path.join(self.dirnames.domain,'domain.gpkg')
-        self.fnames.domain_mask         = os.path.join(self.dirnames.domain,'domain_mask.gpkg')
-        self.fnames.domain_buffered     = os.path.join(self.dirnames.domain,'domain_buffered.gpkg')
-        self.fnames.hucs                = os.path.join(self.dirnames.domain,'hucs.gpkg')
-        self.fnames.nhd                 = os.path.join(self.dirnames.nhd,'nhdhr.gpkg')
-        self.fnames.dem                 = os.path.join(self.dirnames.dem,'dem.tif')
-        self.fnames.dem_original        = os.path.join(self.dirnames.dem,'dem_original.tif')
-        self.fnames.dem_breached        = os.path.join(self.dirnames.dem,'dem_breached.tif')
-        self.fnames.soil_texture        = os.path.join(self.dirnames.soils,'soiltexture.gpkg')
-        self.fnames.soil_transmissivity = os.path.join(self.dirnames.soils,'soiltransmissivity.tif')
-        self.fnames.flow_acc            = os.path.join(self.dirnames.dem,'flow_acc.tif')
-        self.fnames.slope               = os.path.join(self.dirnames.dem,'slope.tif')
-        self.fnames.twi                 = os.path.join(self.dirnames.twi,'twi.tif')
-        self.fnames.twi_upsample        = os.path.join(self.dirnames.twi,'twi_upsample.tif')
-        self.fnames.twi_downsample      = os.path.join(self.dirnames.twi,'twi_downsample.tif')
+        self.fnames.domain              = os.path.join(self.dirnames.domain,     'domain.gpkg')
+        self.fnames.domain_mask         = os.path.join(self.dirnames.domain,     'domain_mask.gpkg')
+        self.fnames.domain_buffered     = os.path.join(self.dirnames.domain,     'domain_buffered.gpkg')
+        self.fnames.hucs                = os.path.join(self.dirnames.domain,     'hucs.gpkg')
+        self.fnames.nhd                 = os.path.join(self.dirnames.nhd,        'nhdhr.gpkg')
+        self.fnames.dem                 = os.path.join(self.dirnames.dem,        'dem.tif')
+        self.fnames.dem_original        = os.path.join(self.dirnames.dem,        'dem_original.tif')
+        self.fnames.dem_breached        = os.path.join(self.dirnames.dem,        'dem_breached.tif')
+        self.fnames.soil_texture        = os.path.join(self.dirnames.soils,      'soiltexture.gpkg')
+        self.fnames.soil_transmissivity = os.path.join(self.dirnames.soils,      'soiltransmissivity.tif')
+        self.fnames.flow_acc            = os.path.join(self.dirnames.dem,        'flow_acc.tif')
+        self.fnames.slope               = os.path.join(self.dirnames.dem,        'slope.tif')
+        self.fnames.twi                 = os.path.join(self.dirnames.twi,        'twi.tif')
+        self.fnames.twi_upsample        = os.path.join(self.dirnames.twi,        'twi_upsample.tif')
+        self.fnames.twi_downsample      = os.path.join(self.dirnames.twi,        'twi_downsample.tif')
 
     def _read_inputyaml(self,fname:str):
         self.fnames.namlistyaml = fname

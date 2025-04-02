@@ -37,7 +37,7 @@ def _set_raw_parflow_wtd(namelist:twtnamelist.Namelist):
             hf_conus1data.write(hf_conus1grid_temp,1)
             wtd_data, wtd_transform = rasterio.mask.mask(hf_conus1data, domain_buffered.to_crs(hf_conus1data.crs), crop=True, all_touched=True, filled=True, nodata=numpy.nan)
             wtd_meta = hf_conus1data.meta
-            wtd_meta.update({"driver": "GTiff","height": wtd_data.shape[1],"width": wtd_data.shape[2],"transform": wtd_transform, "nodata" : numpy.nan})
+            wtd_meta.update({"driver": "GTiff","height": wtd_data.shape[1],"width": wtd_data.shape[2],"transform": wtd_transform, "nodata" : -9999})
             with rasterio.open(fname,'w',**wtd_meta) as wtd_dataset:
                 wtd_dataset.write(wtd_data[0,:,:],1)
 
@@ -90,7 +90,7 @@ def _calc_avgwtd_grid(namelist:twtnamelist.Namelist):
     domain_mask = rasterio.open(namelist.fnames.domain_mask,'r').read(1) 
     for wtd_dir in [namelist.dirnames.wtd_parflow_bilinear,
                     namelist.dirnames.wtd_parflow_nearest,
-                    namelist.dirnames.output_cubic]:
+                    namelist.dirnames.output_raw_cubic]:
         start_string = namelist.time.datetime_dim[0].strftime('%Y%m%d')
         end_string   = namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d')
         fname_output = os.path.join(wtd_dir,'mean_wtd_'+start_string+'_to_'+end_string+'.tiff')
