@@ -6,6 +6,7 @@ def set_wtd(namelist:twtnamelist.Namelist):
     _set_raw_parflow_wtd(namelist)
     #_set_fan2013_data(namelist) TO DO: fix this
     _increase_wtd_resolution(namelist)
+    twtdomain._set_domain_mask(namelist)
     _calc_avgwtd_grid(namelist)
     
 def _set_raw_parflow_wtd(namelist:twtnamelist.Namelist):
@@ -13,31 +14,67 @@ def _set_raw_parflow_wtd(namelist:twtnamelist.Namelist):
     if namelist.options.verbose: print('calling _set_raw_parflow_wtd')
     download_flag = False
     for idatetime in namelist.time.datetime_dim:
-        fname_wtd = os.path.join(namelist.dirnames.wtd_parflow_raw,'wtd_'+idatetime.strftime('%Y%m%d')+'.tiff')
+        fname_wtd = os.path.join(
+            namelist.dirnames.wtd_parflow_raw,
+            f'wtd_{idatetime.strftime("%Y%m%d")}.tiff'
+        )
         if not os.path.isfile(fname_wtd):
             download_flag = True
             break
     if download_flag:
-        if not os.path.isfile(namelist.fnames.domain_buffered): sys.exit('ERROR could not file '+namelist.fnames.domain_buffered)
+        if not os.path.isfile(namelist.fnames.domain_buffered):
+            sys.exit(f'ERROR could not find {namelist.fnames.domain_buffered}')
         domain_buffered = geopandas.read_file(namelist.fnames.domain_buffered)
-        conus1_proj,_,conus1_transform,conus1_shape = _get_parflow_conus1_grid_info()
+        conus1_proj, _, conus1_transform, conus1_shape = _get_parflow_conus1_grid_info()
         start_date_str = namelist.time.datetime_dim[0].strftime('%Y-%m-%d')
-        end_date_str = (namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1]+datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-        options_wtd = {"dataset": "conus1_baseline_mod", "variable": "water_table_depth", "temporal_resolution": "daily", "start_time": start_date_str, "end_time": end_date_str, "grid_bounds":[namelist.bbox_parflow.conus1grid_minx,namelist.bbox_parflow.conus1grid_miny,namelist.bbox_parflow.conus1grid_maxx,namelist.bbox_parflow.conus1grid_maxy]}  
+        end_date_str = (namelist.time.datetime_dim[-1] + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+        options_wtd = {
+            "dataset": "conus1_baseline_mod",
+            "variable": "water_table_depth",
+            "temporal_resolution": "daily",
+            "start_time": start_date_str,
+            "end_time": end_date_str,
+            "grid_bounds": [namelist.bbox_parflow.conus1grid_minx,
+                            namelist.bbox_parflow.conus1grid_miny,
+                            namelist.bbox_parflow.conus1grid_maxx,
+                            namelist.bbox_parflow.conus1grid_maxy]
+        }
         hf_data = hf_hydrodata.get_gridded_data(options_wtd)
-        if hf_data is None or not hasattr(hf_data, 'shape'): sys.exit('ERROR hf_hydrodata query failed')
-        if hf_data.shape[0] != int((namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1]-namelist.time.datetime_dim[0]).days) + 1: sys.exit('ERROR hf_hydrodata returned data of unexpected time length or invalid structure')
+        if hf_data is None or not hasattr(hf_data, 'shape'):
+            sys.exit('ERROR hf_hydrodata query failed')
+        expected_days = (namelist.time.datetime_dim[-1] - namelist.time.datetime_dim[0]).days + 1
+        if hf_data.shape[0] != expected_days:
+            sys.exit('ERROR hf_hydrodata returned data of unexpected time length or invalid structure')
         hf_conus1grid_temp = numpy.empty(conus1_shape)
         for i in range(len(namelist.time.datetime_dim)):
             idatetime = namelist.time.datetime_dim[i]
             fname = os.path.join(namelist.dirnames.wtd_parflow_raw,'wtd_'+idatetime.strftime('%Y%m%d')+'.tiff')
-            hf_conus1grid_temp[namelist.bbox_parflow.conus1grid_miny:namelist.bbox_parflow.conus1grid_maxy,namelist.bbox_parflow.conus1grid_minx:namelist.bbox_parflow.conus1grid_maxx] = hf_data[i,:,:]
+            hf_conus1grid_temp[namelist.bbox_parflow.conus1grid_miny:
+                               namelist.bbox_parflow.conus1grid_maxy,
+                               namelist.bbox_parflow.conus1grid_minx:
+                               namelist.bbox_parflow.conus1grid_maxx] = hf_data[i,:,:]
             memfile = rasterio.io.MemoryFile()
-            hf_conus1data = memfile.open(driver = "GTiff", height = hf_conus1grid_temp.shape[0], width = hf_conus1grid_temp.shape[1], crs=conus1_proj, transform = conus1_transform, nodata = numpy.nan, count = 1, dtype = numpy.float64)
+            hf_conus1data = memfile.open(driver = "GTiff", 
+                                         height = hf_conus1grid_temp.shape[0], 
+                                         width = hf_conus1grid_temp.shape[1], 
+                                         crs=conus1_proj, 
+                                         transform = conus1_transform, 
+                                         nodata = numpy.nan, 
+                                         count = 1, 
+                                         dtype = numpy.float64)
             hf_conus1data.write(hf_conus1grid_temp,1)
-            wtd_data, wtd_transform = rasterio.mask.mask(hf_conus1data, domain_buffered.to_crs(hf_conus1data.crs), crop=True, all_touched=True, filled=True, nodata=numpy.nan)
+            wtd_data, wtd_transform = rasterio.mask.mask(hf_conus1data, 
+                                                         domain_buffered.to_crs(hf_conus1data.crs), 
+                                                         crop=True, 
+                                                         all_touched=True, 
+                                                         filled=True, 
+                                                         nodata=numpy.nan)
             wtd_meta = hf_conus1data.meta
-            wtd_meta.update({"driver": "GTiff","height": wtd_data.shape[1],"width": wtd_data.shape[2],"transform": wtd_transform, "nodata" : -9999})
+            wtd_meta.update({"driver": "GTiff",
+                             "height": wtd_data.shape[1],
+                             "width": wtd_data.shape[2],
+                             "transform": wtd_transform, 
+                             "nodata" : numpy.nan})
             with rasterio.open(fname,'w',**wtd_meta) as wtd_dataset:
                 wtd_dataset.write(wtd_data[0,:,:],1)
 
@@ -68,48 +105,98 @@ def _increase_wtd_resolution(namelist:twtnamelist.Namelist):
     #resample_methods = {'bilinear':[rasterio.enums.Resampling.bilinear,namelist.dirnames.wtd_parflow_bilinear], #doing all three eats too much harddrive space
     #                    'cubic'   :[rasterio.enums.Resampling.cubic,   namelist.dirnames.wtd_parflow_cubic],
     #                    'nearest' :[rasterio.enums.Resampling.nearest, namelist.dirnames.wtd_parflow_nearest]}
-    resample_methods = {'bilinear':[rasterio.enums.Resampling.bilinear,namelist.dirnames.wtd_parflow_bilinear]} 
-    for resample_method_name, [resample_method, resample_dir] in resample_methods.items():
+    resample_methods = {
+        'bilinear': [rasterio.enums.Resampling.bilinear, namelist.dirnames.wtd_parflow_bilinear]
+    }
+    for resample_method_name, (resample_method, resample_dir) in resample_methods.items():
         for idatetime in namelist.time.datetime_dim:
-            fname_wtd = os.path.join(namelist.dirnames.wtd_parflow_raw,'wtd_'+idatetime.strftime('%Y%m%d')+'.tiff')
-            fname_wtd_hr = os.path.join(resample_dir,'wtd_'+idatetime.strftime('%Y%m%d')+'.tiff')
+            fname_wtd = os.path.join(
+                namelist.dirnames.wtd_parflow_raw,
+                f'wtd_{idatetime.strftime("%Y%m%d")}.tiff'
+            )
+            fname_wtd_hr = os.path.join(
+                resample_dir,
+                f'wtd_{idatetime.strftime("%Y%m%d")}.tiff'
+            )
+
             if os.path.isfile(fname_wtd):
                 if not os.path.isfile(fname_wtd_hr) or namelist.options.overwrite_flag:
                     with rasterio.open(fname_wtd) as wtd_dataset:
-                        wtd_data_hr = wtd_dataset.read(out_shape=(wtd_dataset.count,int(wtd_dataset.height * 500),int(wtd_dataset.width * 500)),resampling=resample_method)
-                        wtd_transform_hr = wtd_dataset.transform * wtd_dataset.transform.scale((wtd_dataset.width / wtd_data_hr.shape[-1]),(wtd_dataset.height / wtd_data_hr.shape[-2]))
+                        wtd_data_hr = wtd_dataset.read(
+                            out_shape=(
+                                wtd_dataset.count,
+                                int(wtd_dataset.height * 100),
+                                int(wtd_dataset.width * 100)
+                            ),
+                            resampling=resample_method
+                        )
+                        wtd_transform_hr = wtd_dataset.transform * wtd_dataset.transform.scale(
+                            (wtd_dataset.width / wtd_data_hr.shape[-1]),
+                            (wtd_dataset.height / wtd_data_hr.shape[-2])
+                        )
                         wtd_meta_hr = wtd_dataset.meta
-                        wtd_meta_hr.update({"driver": "GTiff","height": wtd_data_hr.shape[1],"width": wtd_data_hr.shape[2],"transform": wtd_transform_hr, "nodata" : numpy.nan})
+                        wtd_meta_hr.update({
+                            "driver": "GTiff",
+                            "height": wtd_data_hr.shape[1],
+                            "width": wtd_data_hr.shape[2],
+                            "transform": wtd_transform_hr,
+                            "nodata": numpy.nan
+                        })
+
                         with rasterio.open(fname_wtd_hr, "w", **wtd_meta_hr) as wtd_dataset_hr:
                             wtd_dataset_hr.write(wtd_data_hr)
 
 def _calc_avgwtd_grid(namelist:twtnamelist.Namelist):
-    """Calculate summary grid of inundated area"""
+    """Calculate mean wtd"""
     if namelist.options.verbose: print('calling _calc_avgwtd_grid')
-    if not os.path.isfile(namelist.fnames.domain_mask): sys.exit('ERROR could not find '+namelist.fnames.domain_mask)
-    domain_mask = rasterio.open(namelist.fnames.domain_mask,'r').read(1) 
+    start_string = namelist.time.datetime_dim[0].strftime('%Y%m%d')
+    end_string   = namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d')
+    tot          = int((namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1] - namelist.time.datetime_dim[0]).days)+1
+    fname        = "".join(['mean_wtd_',
+                            start_string,
+                            '_to_',
+                            end_string,
+                            '.tiff'])
     for wtd_dir in [namelist.dirnames.wtd_parflow_bilinear,
                     namelist.dirnames.wtd_parflow_nearest,
-                    namelist.dirnames.output_raw_cubic]:
-        start_string = namelist.time.datetime_dim[0].strftime('%Y%m%d')
-        end_string   = namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d')
-        fname_output = os.path.join(wtd_dir,'mean_wtd_'+start_string+'_to_'+end_string+'.tiff')
-        sum = numpy.zeros(shape=domain_mask.shape,dtype=numpy.float64)
+                    namelist.dirnames.wtd_parflow_cubic]:
+        fname_output = os.path.join(wtd_dir,fname)
         if not os.path.isfile(fname_output) or namelist.options.overwrite_flag:
-            count = 0
+            if not os.path.isfile(namelist.fnames.domain_mask): 
+                try: twtdomain._set_domain_mask(namelist)
+                except: sys.exit('ERROR _calc_avgwtd_grid could not find '+namelist.fnames.domain_mask)
+            domain_mask  = rasterio.open(namelist.fnames.domain_mask,'r').read(1) 
+            sum = numpy.zeros(shape=domain_mask.shape,dtype=numpy.float64)
+            cnt = 0
             for i in range(len(namelist.time.datetime_dim)):
                 date_string = namelist.time.datetime_dim[i].strftime('%Y%m%d')
-                fname_wtd_local = os.path.join(wtd_dir,'wtd_'+date_string+'.tiff') 
-                if os.path.isfile(fname_wtd_local):
-                    wtd_data = rasterio.open(fname_wtd_local,'r').read(1)
+                fname_wtd = os.path.join(wtd_dir,'wtd_'+date_string+'.tiff') 
+                if os.path.isfile(fname_wtd):
+                    wtd_data = rasterio.open(fname_wtd,'r').read(1)
                     wtd_data = numpy.where(domain_mask==1,wtd_data,0.)
                     sum += wtd_data
-                    count += 1
-            if count > 0:
-                mean_wtd = sum / count
+                    cnt += 1
+            if cnt == tot:
+                mean_wtd = sum / tot
                 mean_wtd = numpy.where(domain_mask==1,mean_wtd,numpy.nan)
-                with rasterio.open(fname_output, "w", **rasterio.open(namelist._get_dummy_hrwtd_fname(),'r').meta) as summary_dataset:
+                with rasterio.open(fname_output, "w", **rasterio.open(fname_wtd,'r').meta) as summary_dataset:
                     summary_dataset.write(mean_wtd,1)
+    fname_output = os.path.join(namelist.dirnames.wtd_parflow_raw,fname)
+    if not os.path.isfile(fname_output) or namelist.options.overwrite_flag:
+        cnt = 0
+        for i in range(len(namelist.time.datetime_dim)):
+            date_string = namelist.time.datetime_dim[i].strftime('%Y%m%d')
+            fname_wtd = os.path.join(namelist.dirnames.wtd_parflow_raw,'wtd_'+date_string+'.tiff') 
+            if os.path.isfile(fname_wtd):
+                wtd_data = rasterio.open(fname_wtd,'r').read(1)
+                if i == 0:
+                    sum = numpy.zeros(shape=wtd_data.shape,dtype=numpy.float64)
+                sum += wtd_data
+                cnt += 1
+        if cnt == tot:
+            mean_wtd = sum / tot
+            with rasterio.open(fname_output, "w", **rasterio.open(fname_wtd,'r').meta) as summary_dataset:
+                summary_dataset.write(mean_wtd,1)
 
 def _get_latlon_parflow_grid(grid_minx,grid_miny,grid_maxx,grid_maxy):
     """Get latlon bbox from ParFlow CONUS1 grid xy bbox"""

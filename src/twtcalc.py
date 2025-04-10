@@ -11,6 +11,7 @@ def _calc_parflow_inundation_summary(namelist:twtnamelist.Namelist):
     if namelist.options.verbose: print('calling _calc_parflow_inundation_summary')
     _calc_parflow_inundation_summary_perc_inundated(namelist)
     _calc_parflow_inundation_summary_zerowtd(namelist)
+    _calc_perenniality(namelist)
 
 def _calc_parflow_inundation_time_i(wtd_mean,twi_local,twi_mean,f,domain_mask):
     """Calculate inundation using 
@@ -62,6 +63,31 @@ def _calc_parflow_inundation_main(namelist:twtnamelist.Namelist):
                         with rasterio.open(fname_output, "w", **wtd_mean_dataset.meta) as wtd_local_dataset:
                             wtd_local_dataset.write(wtd_local,1)
 
+def _calc_perenniality(namelist:twtnamelist.Namelist):
+    """Calculate perenniality from summary ParFlow simulations"""
+    if namelist.options.verbose: print('calling _calc_perenniality')
+    for method in ['bilinear','nearest','cubic']:
+        if method   == 'bilinear': out_dir = namelist.dirnames.output_summary_bilinear
+        elif method == 'nearest':  out_dir = namelist.dirnames.output_summary_nearest
+        elif method == 'cubic':    out_dir = namelist.dirnames.output_summary_cubic
+        fname = ['percent_inundated_grid_',
+                 namelist.time.datetime_dim[0].strftime('%Y%m%d'),
+                 '_to_',
+                 namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
+                 '.tiff']
+        fname = "".join(fname)
+        if os.path.isfile(os.path.join(out_dir,fname)):
+            fname_output_perennial = os.path.join(out_dir,'perennial.tiff')
+            fname_output_nonperennial = os.path.join(out_dir,'nonperennial.tiff')
+            if not os.path.isfile(fname_output_perennial) or not os.path.isfile(fname_output_nonperennial) or namelist.options.overwrite_flag:
+                inundation_perc = rasterio.open(os.path.join(out_dir,fname),'r').read(1)
+                perenniality = numpy.where(inundation_perc>=100.,1,numpy.nan)
+                nonperenniality = numpy.where((inundation_perc>0)&(inundation_perc<100),1,numpy.nan)
+                with rasterio.open(fname_output_perennial, "w", **rasterio.open(os.path.join(out_dir,fname),'r').meta) as output_dataset:
+                    output_dataset.write(perenniality,1)
+                with rasterio.open(fname_output_nonperennial, "w", **rasterio.open(os.path.join(out_dir,fname),'r').meta) as output_dataset:
+                    output_dataset.write(nonperenniality,1)
+
 def _calc_parflow_inundation_summary_perc_inundated(namelist:twtnamelist.Namelist):
     """Calculate summary grid of inundated area"""
     if namelist.options.verbose: print('calling _calc_parflow_inundation_summary_perc_inundated')
@@ -83,43 +109,51 @@ def _calc_parflow_inundation_summary_perc_inundated(namelist:twtnamelist.Namelis
                         '.tiff']
         fname_output = os.path.join(out_dir,"".join(fname_output))
         if not os.path.isfile(fname_output) or namelist.options.overwrite_flag:
-            count   = 0
+            cnt   = 0
+            tot   = int((namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1] - namelist.time.datetime_dim[0]).days)+1
             sumgrid = numpy.where(domain_mask==1,0,numpy.nan)
-            total   = int((namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1] - namelist.time.datetime_dim[0]).days)+1
             for idatetime in namelist.time.datetime_dim:
-                fname_wtd_local = os.path.join(raw_dir,'inundatedarea_'+idatetime.strftime('%Y%m%d')+'.tiff') 
-                if os.path.isfile(fname_wtd_local):
-                    inundation_data = rasterio.open(fname_wtd_local,'r').read(1)
-                    sumgrid += numpy.where(inundation_data==1,1,0)
-                    count += 1
+                fname = os.path.join(raw_dir,'inundatedarea_'+idatetime.strftime('%Y%m%d')+'.tiff') 
+                if os.path.isfile(fname):
+                    data = rasterio.open(fname,'r').read(1)
+                    sumgrid += numpy.where(data==1,1,0)
+                    cnt += 1
                 else:
                     break
-            if count > 0:
-                if count != total: sys.exit('ERROR _calc_parflow_inundation_summary_perc_inundated count='+str(count)+' total='+str(total))
-                perc_inundated = (sumgrid/float(total))/100.
+            if cnt == tot:
+                perc_inundated = (sumgrid/float(tot))*100.
+                perc_inundated = numpy.where(perc_inundated==0.,numpy.nan,perc_inundated)
                 perc_inundated = numpy.where(domain_mask==1,perc_inundated,numpy.nan)
-                with rasterio.open(fname_output, "w", **rasterio.open(namelist._get_dummy_hrwtd_fname(),'r').meta) as output_dataset:
+                with rasterio.open(fname_output, "w", **rasterio.open(fname,'r').meta) as output_dataset:
                     output_dataset.write(perc_inundated,1)
 
 def _calc_parflow_inundation_summary_zerowtd(namelist:twtnamelist.Namelist):
     """Calculate zero water table depth"""
     if namelist.options.verbose: print('calling _calc_parflow_inundation_summary_zerowtd')
     for method in ['bilinear','nearest','cubic']:
-        if method == 'bilinear': out_dir = namelist.dirnames.output_summary_bilinear
-        elif method == 'nearest': out_dir = namelist.dirnames.output_summary_nearest
-        elif method == 'cubic': out_dir = namelist.dirnames.output_summary_cubic
-        fname_output = os.path.join(out_dir,'mean_wtd_if_local_wtd_equals_0.tiff')
-        if not os.path.isfile(fname_output) or namelist.options.overwrite_flag:
-            domain_mask        = rasterio.open(namelist.fnames.domain_mask,'r').read(1)
-            twi_local          = rasterio.open(namelist.fnames.twi,'r').read(1)
-            twi_local          = numpy.where(domain_mask==1,twi_local,numpy.nan)
-            twi_mean           = rasterio.open(namelist.fnames.twi_downsample,'r').read(1)
-            twi_mean           = numpy.where(domain_mask==1,twi_mean,numpy.nan)
-            trans_decay_factor = rasterio.open(namelist.fnames.soil_transmissivity,'r').read(1)
-            trans_decay_factor = numpy.where(domain_mask==1,trans_decay_factor,numpy.nan)
-            with rasterio.open(namelist._get_dummy_hrwtd_fname(),'r') as wtd_mean_t0:
-                wtd_local = wtd_mean_t0.read(1)
-                wtd_local = numpy.where(domain_mask==1,0,numpy.nan)
-                wtd_mean  = numpy.where(domain_mask==1,((1/trans_decay_factor)*(twi_local-twi_mean)-wtd_local)*(-1),numpy.nan)
-                with rasterio.open(fname_output, "w", **wtd_mean_t0.meta) as wtd_mean_dataset_wtd_local_0:
-                    wtd_mean_dataset_wtd_local_0.write(wtd_mean,1)
+        if method == 'bilinear': 
+            out_dir = namelist.dirnames.output_summary_bilinear
+            raw_dir = namelist.dirnames.output_raw_bilinear
+        elif method == 'nearest': 
+            out_dir = namelist.dirnames.output_summary_nearest
+            raw_dir = namelist.dirnames.output_raw_neareast
+        elif method == 'cubic':
+            out_dir = namelist.dirnames.output_summary_cubic
+            raw_dir = namelist.dirnames.output_raw_cubic
+        fname_wtd_hr = os.path.join(raw_dir,'inundatedarea_'+namelist.time.datetime_dim[0].strftime('%Y%m%d')+'.tiff')
+        if os.path.isfile(fname_wtd_hr):
+            fname_output = os.path.join(out_dir,'mean_wtd_if_local_wtd_equals_0.tiff')
+            if not os.path.isfile(fname_output) or namelist.options.overwrite_flag:
+                domain_mask        = rasterio.open(namelist.fnames.domain_mask,'r').read(1)
+                twi_local          = rasterio.open(namelist.fnames.twi,'r').read(1)
+                twi_local          = numpy.where(domain_mask==1,twi_local,numpy.nan)
+                twi_mean           = rasterio.open(namelist.fnames.twi_downsample,'r').read(1)
+                twi_mean           = numpy.where(domain_mask==1,twi_mean,numpy.nan)
+                trans_decay_factor = rasterio.open(namelist.fnames.soil_transmissivity,'r').read(1)
+                trans_decay_factor = numpy.where(domain_mask==1,trans_decay_factor,numpy.nan)
+                with rasterio.open(fname_wtd_hr,'r') as wtd_mean_t0:
+                    wtd_local = wtd_mean_t0.read(1)
+                    wtd_local = numpy.where(domain_mask==1,0,numpy.nan)
+                    wtd_mean  = numpy.where(domain_mask==1,((1/trans_decay_factor)*(twi_local-twi_mean)-wtd_local)*(-1),numpy.nan)
+                    with rasterio.open(fname_output, "w", **wtd_mean_t0.meta) as wtd_mean_dataset_wtd_local_0:
+                        wtd_mean_dataset_wtd_local_0.write(wtd_mean,1)

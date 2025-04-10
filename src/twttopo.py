@@ -1,9 +1,9 @@
 import os,sys,numpy,shutil,py3dep,twtnamelist,rasterio,whitebox_workflows
 
-def set_twi(namelist:twtnamelist.Namelist):
+def set_twi(namelist:twtnamelist.Namelist,dem_resolution=None):
     """Create TWI and transmissivity data for domain"""
     if namelist.options.verbose: print('calling set_twi')
-    _set_dem(namelist)
+    _set_dem(namelist,dem_resultion=dem_resolution)
     _project_dem(namelist)
     _breach_dem(namelist)
     _set_facc(namelist)
@@ -12,15 +12,34 @@ def set_twi(namelist:twtnamelist.Namelist):
     _upsample_twi(namelist)
     _downsample_twi(namelist)
 
-def _set_dem(namelist:twtnamelist.Namelist):
-    """Get DEM -- py3dep.check_3dep_availability may show availability of 1 meter resolution DEM but py3dep.get_dem does not work if called with resolution < 10, in my experience"""
+def _set_dem(namelist:twtnamelist.Namelist,dem_resultion=None):
+    """Get DEM using py3dep unless user provided via dem variable in namelist.yaml"""
     if namelist.options.verbose: print('calling _set_dem')
     if not os.path.isfile(namelist.fnames.dem_original) or namelist.options.overwrite_flag:
         if os.path.isfile(namelist.fnames.dem_user):
             shutil.copy2(namelist.fnames.dem_user,namelist.fnames.dem_original)
         else:
-            #dtavailability = py3dep.check_3dep_availability([lon_min,lat_min,lon_max,lat_max]) # can see dem resolution availability here
-            dem_original = py3dep.get_dem(geometry=[namelist.bbox_domain.lon_min,namelist.bbox_domain.lat_min,namelist.bbox_domain.lon_max,namelist.bbox_domain.lat_max],resolution=10) # wpn't work with < 10 m
+            bbox_domain = [namelist.bbox_domain.lon_min,
+                           namelist.bbox_domain.lat_min,
+                           namelist.bbox_domain.lon_max,
+                           namelist.bbox_domain.lat_max]
+            if dem_resultion is None:
+                dtavail = py3dep.check_3dep_availability(bbox_domain)
+                if '1m' in dtavail and dtavail['1m']:
+                    print('1m DEM available for domain but cannot be automatically downloaded due to its size - using the next coarser resolution instead')
+                if '3m' in dtavail and dtavail['3m']:
+                    dem_resultion = 3
+                elif '5m' in dtavail and dtavail['5m']:
+                    dem_resultion = 5
+                elif '10m' in dtavail and dtavail['10m']:
+                    dem_resultion = 10
+                elif '30m' in dtavail and dtavail['30m']:
+                    dem_resultion = 30
+                elif '60m' in dtavail and dtavail['60m']:
+                    dem_resultion = 60
+                else:
+                    sys.exit('ERROR: could not find dem resolution via py3dep - py3dep.check_3dep_availability results: '+str(dtavail))
+            dem_original = py3dep.get_dem(geometry=bbox_domain,resolution=dem_resultion)
             dem_original.rio.to_raster(namelist.fnames.dem_original)
             del dem_original
 
@@ -29,8 +48,7 @@ def _project_dem(namelist:twtnamelist.Namelist):
     if namelist.options.verbose: print('calling _project_dem')
     if not os.path.isfile(namelist.fnames.dem) or namelist.options.overwrite_flag:
         with rasterio.open(namelist.fnames.dem_original,'r') as dem_original: 
-            fname_dummy_wtd_hr = namelist._get_dummy_hrwtd_fname()
-            with rasterio.open(fname_dummy_wtd_hr,'r') as dummy_hr_data:
+            with rasterio.open(namelist._get_dummy_grid_fname(),'r') as dummy_hr_data:
                 dem_reprojected_data, dem_reprojected_transform = rasterio.warp.reproject(
                         source = dem_original.read(1),
                         destination = dummy_hr_data.read(1),

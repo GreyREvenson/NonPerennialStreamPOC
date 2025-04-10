@@ -240,26 +240,11 @@ class Namelist:
             idatetime += datetime.timedelta(days=1)
         self.time.datetime_dim = numpy.array(datetime_dim)
 
-    def _get_dummy_hrwtd_fname(self):
-        """Get the file name and path of a random high resolution water table depth grid"""
-        fname = ''
-        for wtd_dir in [self.dirnames.wtd_parflow_bilinear,self.dirnames.wtd_parflow_nearest,self.dirnames.wtd_parflow_cubic]:
+    def _get_dummy_grid_fname(self):
+        for hrwtd_dir in [self.dirnames.wtd_parflow_bilinear,
+                          self.dirnames.wtd_parflow_nearest,
+                          self.dirnames.wtd_parflow_cubic]:
             for idatetime in self.time.datetime_dim:
-                fname_wtd = os.path.join(wtd_dir,'wtd_'+idatetime.strftime('%Y%m%d')+'.tiff')
-                if os.path.isfile(fname_wtd):
-                    fname = fname_wtd
-                    break
-            if len(fname) > 0: break
-        if len(fname) == 0: sys.exit('ERROR: Resampled water table depth data was not found')
-        return fname
-    
-    def _set_domain_bbox(self):
-        """Set domain bounding box using buffered domain boundary"""
-        if self.options.verbose: print('calling _set_domain_bbox')
-        if not os.path.isfile(self.fnames.domain): sys.exit('ERROR could not find '+self.fnames.domain)
-        domain = geopandas.read_file(self.fnames.domain)
-        domain_buffered = domain.to_crs(self.parflow.conus1_proj).buffer(distance=2000).to_crs("EPSG:4326")
-        self.bbox_domain.lat_min = float(domain_buffered.bounds['miny'].iloc[0])
-        self.bbox_domain.lat_max = float(domain_buffered.bounds['maxy'].iloc[0])
-        self.bbox_domain.lon_min = float(domain_buffered.bounds['minx'].iloc[0])
-        self.bbox_domain.lon_max = float(domain_buffered.bounds['maxx'].iloc[0])
+                fname_hrwtd = os.path.join(hrwtd_dir,'wtd_'+idatetime.strftime('%Y%m%d')+'.tiff')
+                if os.path.isfile(fname_hrwtd): return fname_hrwtd
+        return None
