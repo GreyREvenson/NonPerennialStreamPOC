@@ -105,7 +105,6 @@ class twtfoliummap(folium.Map):
                             namelist.dirnames.output_summary_cubic]:
             fname = os.path.join(summary_dir,'nonperennial_strms_'+fname)
             cmap = branca.colormap.linear.Blues_07
-            #cmap.colors.reverse()
             if os.path.isfile(fname):
                 self._add_grid(name='Non-perennial',
                                fname=fname,
