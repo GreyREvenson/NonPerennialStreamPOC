@@ -8,7 +8,7 @@ def set_wtd(namelist:twtnamelist.Namelist):
     _increase_wtd_resolution(namelist)
     twtdomain._set_domain_mask(namelist)
     _calc_avgwtd_grid(namelist)
-    
+
 def _set_raw_parflow_wtd(namelist:twtnamelist.Namelist):
     """Get raw ParFlow water table depth data"""
     if namelist.options.verbose: print('calling _set_raw_parflow_wtd')

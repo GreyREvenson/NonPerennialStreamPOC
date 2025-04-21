@@ -1,19 +1,20 @@
 import os,sys,numpy,shutil,py3dep,twtnamelist,rasterio,whitebox_workflows
 
-def set_twi(namelist:twtnamelist.Namelist,dem_resolution=None):
+def set_twi(namelist:twtnamelist.Namelist,):
     """Create TWI and transmissivity data for domain"""
     if namelist.options.verbose: print('calling set_twi')
-    _set_dem(namelist,dem_resultion=dem_resolution)
+    _set_dem(namelist)
     _project_dem(namelist)
     _breach_dem(namelist)
     _set_facc(namelist)
+    _set_stream_mask(namelist)
     _set_slope(namelist)
     _calc_twi(namelist)
     _upsample_twi(namelist)
     _downsample_twi(namelist)
 
-def _set_dem(namelist:twtnamelist.Namelist,dem_resultion=None):
-    """Get DEM using py3dep unless user provided via dem variable in namelist.yaml"""
+def _set_dem(namelist:twtnamelist.Namelist):
+    """Get DEM using py3dep"""
     if namelist.options.verbose: print('calling _set_dem')
     if not os.path.isfile(namelist.fnames.dem_original) or namelist.options.overwrite_flag:
         if os.path.isfile(namelist.fnames.dem_user):
@@ -23,23 +24,23 @@ def _set_dem(namelist:twtnamelist.Namelist,dem_resultion=None):
                            namelist.bbox_domain.lat_min,
                            namelist.bbox_domain.lon_max,
                            namelist.bbox_domain.lat_max]
-            if dem_resultion is None:
+            if namelist.vars.facc_strm_threshold is None:
                 dtavail = py3dep.check_3dep_availability(bbox_domain)
                 if '1m' in dtavail and dtavail['1m']:
                     print('1m DEM available for domain but cannot be automatically downloaded due to its size - using the next coarser resolution instead')
                 if '3m' in dtavail and dtavail['3m']:
-                    dem_resultion = 3
+                    namelist.vars.facc_strm_threshold = 3
                 elif '5m' in dtavail and dtavail['5m']:
-                    dem_resultion = 5
+                    namelist.vars.facc_strm_threshold = 5
                 elif '10m' in dtavail and dtavail['10m']:
-                    dem_resultion = 10
+                    namelist.vars.facc_strm_threshold = 10
                 elif '30m' in dtavail and dtavail['30m']:
-                    dem_resultion = 30
+                    namelist.vars.facc_strm_threshold = 30
                 elif '60m' in dtavail and dtavail['60m']:
-                    dem_resultion = 60
+                    namelist.vars.facc_strm_threshold = 60
                 else:
                     sys.exit('ERROR: could not find dem resolution via py3dep - py3dep.check_3dep_availability results: '+str(dtavail))
-            dem_original = py3dep.get_dem(geometry=bbox_domain,resolution=dem_resultion)
+            dem_original = py3dep.get_dem(geometry=bbox_domain,resolution=namelist.vars.facc_strm_threshold)
             dem_original.rio.to_raster(namelist.fnames.dem_original)
             del dem_original
 
@@ -68,8 +69,8 @@ def _project_dem(namelist:twtnamelist.Namelist):
 def _breach_dem(namelist:twtnamelist.Namelist):
     """Breach the DEM (minimally invasive alternative to filling the DEM?) (see https://www.whiteboxgeo.com/manual/wbt_book/available_tools/hydrological_analysis.html#BreachDepressionsLeastCost)"""
     if namelist.options.verbose: print('calling _breach_dem')
-    wbe = whitebox_workflows.WbEnvironment()
     if not os.path.isfile(namelist.fnames.dem_breached) or namelist.options.overwrite_flag:
+        wbe = whitebox_workflows.WbEnvironment()
         dem_wbe = wbe.read_raster(namelist.fnames.dem)
         dem_breached_wbe = wbe.breach_depressions_least_cost(dem=dem_wbe)
         wbe.write_raster(dem_breached_wbe, namelist.fnames.dem_breached, compress=False)
@@ -78,18 +79,31 @@ def _breach_dem(namelist:twtnamelist.Namelist):
 def _set_facc(namelist:twtnamelist.Namelist):
     """Calculate flow accumulation"""
     if namelist.options.verbose: print('calling _set_facc')
-    wbe = whitebox_workflows.WbEnvironment()
     if not os.path.isfile(namelist.fnames.flow_acc) or namelist.options.overwrite_flag:
+        wbe = whitebox_workflows.WbEnvironment()
         dem_breached_wbe = wbe.read_raster(namelist.fnames.dem_breached)
         acc_wbe = wbe.dinf_flow_accum(dem=dem_breached_wbe,out_type='sca',log_transform=False)                                         
         wbe.write_raster(acc_wbe, namelist.fnames.flow_acc, compress=False)
         del dem_breached_wbe, acc_wbe
 
+def _set_stream_mask(namelist:twtnamelist.Namelist):
+    """Set stream mask - using a filled DEM and a FD8 flow accumulation""" 
+    if namelist.options.verbose: print('calling _set_stream_mask')
+    if not os.path.isfile(namelist.fnames.facc_strm_mask) or namelist.options.overwrite_flag:
+        if not os.path.isfile(namelist.fnames.dem): 
+            sys.exit('ERROR _set_stream_mask could not find '+namelist.fnames.dem)
+        wbe = whitebox_workflows.WbEnvironment()
+        dem_wbe = wbe.read_raster(namelist.fnames.dem)
+        dem_filled_wbe = wbe.fill_depressions(dem=dem_wbe)
+        facc_fd8_wbe = wbe.fd8_flow_accum(dem=dem_filled_wbe,out_type='sca',log_transform=False)   
+        strm_mask_wbe = wbe.extract_streams(facc_fd8_wbe, threshold=namelist.vars.facc_strm_threshold, zero_background=True)
+        wbe.write_raster(strm_mask_wbe, namelist.fnames.facc_strm_mask, compress=False)
+
 def _set_slope(namelist:twtnamelist.Namelist):
     """Calculate slope (required for TWI calculation)"""
     if namelist.options.verbose: print('calling _set_slope')
-    wbe = whitebox_workflows.WbEnvironment()
     if not os.path.isfile(namelist.fnames.slope) or namelist.options.overwrite_flag:
+        wbe = whitebox_workflows.WbEnvironment()
         dem_wbe = wbe.read_raster(namelist.fnames.dem_breached)
         slp_wbe = wbe.slope(dem=dem_wbe)   
         wbe.write_raster(slp_wbe, namelist.fnames.slope, compress=False)
@@ -98,8 +112,8 @@ def _set_slope(namelist:twtnamelist.Namelist):
 def _calc_twi(namelist:twtnamelist.Namelist):
     """Calculate TWI"""
     if namelist.options.verbose: print('calling _calc_twi')
-    wbe = whitebox_workflows.WbEnvironment()
     if not os.path.isfile(namelist.fnames.twi) or namelist.options.overwrite_flag:
+        wbe = whitebox_workflows.WbEnvironment()
         acc_wbe = wbe.read_raster(namelist.fnames.flow_acc)
         slp_wbe = wbe.read_raster(namelist.fnames.slope)
         twi_wbe = wbe.wetness_index(specific_catchment_area=acc_wbe,slope=slp_wbe)

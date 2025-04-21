@@ -49,6 +49,7 @@ class Namelist:
         soil_texture            = ''
         soil_transmissivity     = ''
         flow_acc                = ''
+        facc_strm_mask          = ''
         slope                   = ''
         twi                     = ''
         twi_upsample            = ''
@@ -77,6 +78,8 @@ class Namelist:
         start_date              = ''
         end_date                = ''
         namelist                = ''
+        facc_strm_threshold     = 0
+        dem_rez                 = None
 
     class Options:
         """Options"""
@@ -178,12 +181,13 @@ class Namelist:
         self.fnames.dem_original        = os.path.join(self.dirnames.dem,        'dem_original.tif')
         self.fnames.dem_breached        = os.path.join(self.dirnames.dem,        'dem_breached.tif')
         self.fnames.soil_texture        = os.path.join(self.dirnames.soils,      'soiltexture.gpkg')
-        self.fnames.soil_transmissivity = os.path.join(self.dirnames.soils,      'soiltransmissivity.tif')
-        self.fnames.flow_acc            = os.path.join(self.dirnames.dem,        'flow_acc.tif')
-        self.fnames.slope               = os.path.join(self.dirnames.dem,        'slope.tif')
-        self.fnames.twi                 = os.path.join(self.dirnames.twi,        'twi.tif')
-        self.fnames.twi_upsample        = os.path.join(self.dirnames.twi,        'twi_upsample.tif')
-        self.fnames.twi_downsample      = os.path.join(self.dirnames.twi,        'twi_downsample.tif')
+        self.fnames.soil_transmissivity = os.path.join(self.dirnames.soils,      'soiltransmissivity.tiff')
+        self.fnames.flow_acc            = os.path.join(self.dirnames.dem,        'flow_acc.tiff')
+        self.fnames.slope               = os.path.join(self.dirnames.dem,        'slope.tiff')
+        self.fnames.facc_strm_mask      = os.path.join(self.dirnames.dem,        'facc_strm_mask.tiff')
+        self.fnames.twi                 = os.path.join(self.dirnames.twi,        'twi.tiff')
+        self.fnames.twi_upsample        = os.path.join(self.dirnames.twi,        'twi_upsample.tiff')
+        self.fnames.twi_downsample      = os.path.join(self.dirnames.twi,        'twi_downsample.tiff')
 
     def _read_inputyaml(self,fname:str):
         self.fnames.namlistyaml = fname
@@ -195,19 +199,22 @@ class Namelist:
 
     def _set_user_inputs(self):
         """Set variables using read-in values"""
-        name_project_dir = 'project_directory'
-        name_huc              = 'huc'
-        name_overwrite        = 'overwrite'
-        name_verbose          = 'verbose'
-        name_pysda            = 'pysda'
-        name_dem              = 'dem'
-        name_start_date       = 'start_date'
-        name_end_date         = 'end_date'
+        name_project_dir         = 'project_directory'
+        name_huc                 = 'huc'
+        name_overwrite           = 'overwrite'
+        name_verbose             = 'verbose'
+        name_pysda               = 'pysda'
+        name_dem                 = 'dem'
+        name_start_date          = 'start_date'
+        name_end_date            = 'end_date'
+        name_facc_strm_threshold = 'facc_strm_threshold'
+        name_dem_rez             = 'dem_resolution'
         req_names = [name_project_dir,
                      name_huc,
                      name_pysda,
                      name_start_date,
-                     name_end_date]
+                     name_end_date,
+                     name_facc_strm_threshold]
         for name in req_names:
             if name not in self.vars.namelist: 
                 sys.exit('ERROR required variable '+name+' not found '+self.fnames.namlistyaml)
@@ -219,12 +226,20 @@ class Namelist:
         self.vars.huc_level   = len(self.vars.huc)
         if self.vars.huc_level not in (2,4,6,8,10,12): 
             sys.exit('ERROR invalid huc level in namelist file')
+        try:
+            threshold = int(self.vars.namelist[name_facc_strm_threshold])
+        except ValueError:
+            sys.exit('ERROR facc_strm_threshold must be an integer')
+        self.vars.facc_strm_threshold = threshold
         if name_overwrite in self.vars.namelist and str(self.vars.namelist[name_overwrite]).upper().find('TRUE') != -1:
             self.options.overwrite_flag = True
         if name_verbose in self.vars.namelist and str(self.vars.namelist[name_verbose]).upper().find('TRUE') != -1:
             self.options.verbose = True
         if name_dem in self.vars.namelist:
             self.fnames.dem_user = os.path.abspath(self.vars.namelist[name_dem])
+        if name_dem_rez in self.vars.namelist:
+            try: self.vars.dem_rez = int(self.vars.namelist[name_dem_rez])
+            except: sys.exit('ERROR '+name_dem_rez+' must be an integer')
         self._set_time_dim()
 
     def _set_time_dim(self):

@@ -1,4 +1,4 @@
-import os,sys,numpy,rasterio,twtnamelist
+import os,sys,numpy,rasterio,twtnamelist,twtstreams
 
 def calc_parflow_inundation(namelist:twtnamelist.Namelist):
     """Calculate inundation using ParFlow simulations"""
@@ -70,23 +70,26 @@ def _calc_perenniality(namelist:twtnamelist.Namelist):
         if method   == 'bilinear': out_dir = namelist.dirnames.output_summary_bilinear
         elif method == 'nearest':  out_dir = namelist.dirnames.output_summary_nearest
         elif method == 'cubic':    out_dir = namelist.dirnames.output_summary_cubic
-        fname = ['percent_inundated_grid_',
-                 namelist.time.datetime_dim[0].strftime('%Y%m%d'),
+        fname = [namelist.time.datetime_dim[0].strftime('%Y%m%d'),
                  '_to_',
                  namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
                  '.tiff']
-        fname = "".join(fname)
-        if os.path.isfile(os.path.join(out_dir,fname)):
-            fname_output_perennial = os.path.join(out_dir,'perennial.tiff')
-            fname_output_nonperennial = os.path.join(out_dir,'nonperennial.tiff')
+        tstr = "".join(fname)
+        fname_full_grid = os.path.join(out_dir,'percent_inundated_grid_'+tstr)
+        if os.path.isfile(fname_full_grid):
+            fname_output_perennial    = os.path.join(out_dir,'perennial_strms_'+tstr)
+            fname_output_nonperennial = os.path.join(out_dir,'nonperennial_strms_'+tstr)
             if not os.path.isfile(fname_output_perennial) or not os.path.isfile(fname_output_nonperennial) or namelist.options.overwrite_flag:
-                inundation_perc = rasterio.open(os.path.join(out_dir,fname),'r').read(1)
-                perenniality = numpy.where(inundation_perc>=100.,1,numpy.nan)
-                nonperenniality = numpy.where((inundation_perc>0)&(inundation_perc<100),1,numpy.nan)
-                with rasterio.open(fname_output_perennial, "w", **rasterio.open(os.path.join(out_dir,fname),'r').meta) as output_dataset:
-                    output_dataset.write(perenniality,1)
-                with rasterio.open(fname_output_nonperennial, "w", **rasterio.open(os.path.join(out_dir,fname),'r').meta) as output_dataset:
-                    output_dataset.write(nonperenniality,1)
+                inundation_perc = rasterio.open(fname_full_grid,'r').read(1)
+                stream_mask = rasterio.open(namelist.fnames.facc_strm_mask,'r').read(1)
+                perennial = numpy.where(inundation_perc>=100.,1,numpy.nan)
+                perennial = numpy.where(stream_mask==1,perennial,numpy.nan)
+                nonperennial = numpy.where((inundation_perc>0)&(inundation_perc<100),inundation_perc,numpy.nan)
+                nonperennial = numpy.where(stream_mask==1,nonperennial,numpy.nan)
+                with rasterio.open(fname_output_perennial, "w", **rasterio.open(fname_full_grid,'r').meta) as output_dataset:
+                    output_dataset.write(perennial,1)
+                with rasterio.open(fname_output_nonperennial, "w", **rasterio.open(fname_full_grid,'r').meta) as output_dataset:
+                    output_dataset.write(nonperennial,1)
 
 def _calc_parflow_inundation_summary_perc_inundated(namelist:twtnamelist.Namelist):
     """Calculate summary grid of inundated area"""

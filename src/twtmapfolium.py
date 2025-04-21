@@ -74,9 +74,8 @@ class twtfoliummap(folium.Map):
                           fname=os.path.join(namelist.dirnames.wtd_parflow_raw,fname),
                           cmap=branca.colormap.linear.viridis)
 
-
     def add_percinundated(self,namelist:twtnamelist.Namelist):
-        """Get folium map of mean WTD values"""
+        """Get folium map of mean percent inundation values for full grid"""
         fname = "".join(['percent_inundated_grid_',
                          namelist.time.datetime_dim[0].strftime('%Y%m%d'),
                          '_to_',
@@ -95,7 +94,49 @@ class twtfoliummap(folium.Map):
                           fname=os.path.join(namelist.dirnames.output_summary_cubic,fname),
                           cmap=branca.colormap.linear.Reds_08)
 
-    def _add_grid(self,name:str,fname:str,cmap:branca.colormap.ColorMap):
+    def add_nonperennial_strm_classification(self,namelist:twtnamelist.Namelist):
+        """Get folium map of mean WTD values"""
+        fname = "".join([namelist.time.datetime_dim[0].strftime('%Y%m%d'),
+                         '_to_',
+                         namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
+                         '.tiff'])
+        for summary_dir in [namelist.dirnames.output_summary_bilinear,
+                            namelist.dirnames.output_summary_nearest,
+                            namelist.dirnames.output_summary_cubic]:
+            fname = os.path.join(summary_dir,'nonperennial_strms_'+fname)
+            cmap = branca.colormap.linear.Blues_07
+            cmap.colors.reverse()
+            if os.path.isfile(fname):
+                self._add_grid(name='Non-perennial',
+                               fname=fname,
+                               cmap=cmap)
+                
+    def add_perennial_strm_classification(self,namelist:twtnamelist.Namelist):
+        """Get folium map of mean WTD values"""
+        fname = "".join([namelist.time.datetime_dim[0].strftime('%Y%m%d'),
+                         '_to_',
+                         namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
+                         '.tiff'])
+        for summary_dir in [namelist.dirnames.output_summary_bilinear,
+                            namelist.dirnames.output_summary_nearest,
+                            namelist.dirnames.output_summary_cubic]:
+            fname  = os.path.join(summary_dir,'perennial_strms_'+fname)
+            cmap = branca.colormap.LinearColormap(['white','red'], vmin=0, vmax=1)
+            if os.path.isfile(fname):
+                self._add_grid(name='Perennial',
+                               fname=fname,
+                               cmap=cmap)
+        html_legend = """
+        <div style="position: fixed; 
+        top: 10px; left: 60px; width: 200px; height: auto; 
+        border:2px solid grey; z-index:9999; font-size:14px;
+        background-color:white; opacity: 0.85; padding: 10px;">
+        """
+        html_legend += f'<div style="display: flex; align-items: center; margin-bottom: 5px;"><div style="width: 20px; height: 20px; background-color: {cmap(1)}; margin-right: 5px;"></div>{'Perennial'}</div>'
+        html_legend += "</div>"
+        self.get_root().html.add_child(folium.Element(html_legend))
+
+    def _add_grid(self,name:str,fname:str,cmap:branca.colormap.ColorMap|dict):
         """Add gridded data to folium map"""
         if not os.path.isfile(fname): 
             sys.exit('ERROR _add_grid could not find '+fname)
@@ -127,11 +168,13 @@ class twtfoliummap(folium.Map):
                     dst_crs=folium_crs,
                     resampling=rasterio.enums.Resampling.nearest
                 )
-                vals = src_prj.read(1)
                 bbox = rasterio.warp.transform_bounds(src_prj.crs, "EPSG:4326", *src_prj.bounds)
-                cmap = cmap.scale(numpy.nanmin(vals), numpy.nanmax(vals))
-                cmap.caption = name
-                cmap.add_to(self)
+                vals = src_prj.read(1)
+                vmin,vmax = numpy.nanmin(vals),numpy.nanmax(vals)
+                if vmin != vmax:                       
+                    cmap = cmap.scale(vmin, vmax)
+                    cmap.caption = name
+                    cmap.add_to(self)
                 cmapf = lambda x: (0, 0, 0, 0) if numpy.isnan(x) else cmap.rgba_floats_tuple(x)
                 folium.raster_layers.ImageOverlay(
                     name=name,
