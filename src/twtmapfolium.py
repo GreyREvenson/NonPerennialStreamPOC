@@ -81,7 +81,7 @@ class twtfoliummap(folium.Map):
         for name, dir in dt.items():
             fname = os.path.join(dir,fname)
             if os.path.isfile(fname):
-                self._add_grid(name='GWD-TWI % Inundated ('+name+')',
+                self._add_grid(name='WTD-TWI %-Inundated ('+name+')',
                               fname=fname,
                               cmap=branca.colormap.linear.Reds_08)
 
@@ -98,7 +98,7 @@ class twtfoliummap(folium.Map):
             fname = os.path.join(dir,'nonperennial_strms_'+fname)
             cmap = branca.colormap.linear.Blues_07
             if os.path.isfile(fname):
-                self._add_grid(name='GWD-TWI Non-perennial ('+name+')',
+                self._add_grid(name='WTD-TWI Non-perennial ('+name+')',
                                fname=fname,
                                cmap=cmap)
                 
@@ -115,7 +115,7 @@ class twtfoliummap(folium.Map):
             fname  = os.path.join(dir,'perennial_strms_'+fname)
             cmap = branca.colormap.LinearColormap(['white','red'], vmin=0, vmax=1)
             if os.path.isfile(fname):
-                self._add_grid(name='GWD-TWI Perennial ('+name+')',
+                self._add_grid(name='WTD-TWI Perennial ('+name+')',
                                fname=fname,
                                cmap=cmap)
         html_legend = """
@@ -124,7 +124,7 @@ class twtfoliummap(folium.Map):
         border:2px solid grey; z-index:9999; font-size:14px;
         background-color:white; opacity: 0.85; padding: 10px;">
         """
-        html_legend += f'<div style="display: flex; align-items: center; margin-bottom: 5px;"><div style="width: 20px; height: 20px; background-color: {cmap(1)}; margin-right: 5px;"></div>{'GWD-TWI Perennial'}</div>'
+        html_legend += f'<div style="display: flex; align-items: center; margin-bottom: 5px;"><div style="width: 20px; height: 20px; background-color: {cmap(1)}; margin-right: 5px;"></div>{'WTD-TWI Perennial'}</div>'
         html_legend += "</div>"
         self.get_root().html.add_child(folium.Element(html_legend))
 
