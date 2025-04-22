@@ -120,11 +120,12 @@ class twtfoliummap(folium.Map):
                                cmap=cmap)
         html_legend = """
         <div style="position: fixed; 
-        top: 10px; left: 60px; width: 200px; height: auto; 
+        bottom: 10px; left: 10px; width: 200px; height: auto; 
         border:2px solid grey; z-index:9999; font-size:14px;
         background-color:white; opacity: 0.85; padding: 10px;">
+        &nbsp; <b>WTD-TWI Classification</b> <br>
         """
-        html_legend += f'<div style="display: flex; align-items: center; margin-bottom: 5px;"><div style="width: 20px; height: 20px; background-color: {cmap(1)}; margin-right: 5px;"></div>{'WTD-TWI Perennial'}</div>'
+        html_legend += f'<div style="display: flex; align-items: center; margin-bottom: 5px;"><div style="width: 20px; height: 20px; background-color: {cmap(1)}; margin-right: 5px;"></div>{'Perennial'}</div>'
         html_legend += "</div>"
         self.get_root().html.add_child(folium.Element(html_legend))
 
