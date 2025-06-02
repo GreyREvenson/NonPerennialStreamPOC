@@ -1,4 +1,4 @@
-import os,sys,math,rasterio,yaml,datetime,numpy,geopandas,hf_hydrodata
+import os,sys,math,rasterio,yaml,datetime,numpy,geopandas,hf_hydrodata,pygeohydro,shapely
 
 class Namelist:
 
@@ -9,25 +9,23 @@ class Namelist:
         wtd                     = ''
         wtd_parflow             = ''
         wtd_parflow_raw         = ''
-        wtd_parflow_bilinear    = ''
-        wtd_parflow_nearest     = ''
-        wtd_parflow_cubic       = ''
+        wtd_parflow_resampled   = ''
         wtd_fan                 = ''
+        topo                    = ''
         dem                     = ''
+        dem_breached            = ''
         twi                     = ''
+        twi_mean                = ''
+        slope                   = ''
+        strm_mask               = ''
+        facc                    = ''
         soils                   = ''
         domain                  = ''
         nhd                     = '' 
         pysda                   = ''
         output                  = ''
         output_raw              = ''
-        output_raw_bilinear     = ''
-        output_raw_neareast     = ''
-        output_raw_cubic        = ''
         output_summary          = ''
-        output_summary_bilinear = ''
-        output_summary_nearest  = ''
-        output_summary_cubic    = ''
 
     class Time:
         start_date              = ''
@@ -37,14 +35,15 @@ class Namelist:
     class FileNames:
         """File names including full path"""
         namlistyaml             = ''
-        hucs                    = ''
         domain                  = ''
         domain_mask             = ''
-        domain_buffered         = ''
+        hucs                    = ''
+        huc                     = ''
+        huc_mask                = ''
+        huc_buffered            = ''
         nhd                     = ''
         dem                     = ''
         dem_user                = ''
-        dem_original            = ''
         dem_breached            = ''
         soil_texture            = ''
         soil_transmissivity     = ''
@@ -52,8 +51,7 @@ class Namelist:
         facc_strm_mask          = ''
         slope                   = ''
         twi                     = ''
-        twi_upsample            = ''
-        twi_downsample          = ''
+        twi_mean                = ''
 
     class BBoxDomain:
         lat_min = ''
@@ -71,6 +69,11 @@ class Namelist:
         conus2grid_maxx = ''
         conus2grid_maxy = ''
 
+    class ParallelProcessing:
+        flag = False
+        core_count              = ''
+        huc_break_lvl           = ''
+
     class Variables:
         """Variables"""
         huc                     = ''
@@ -80,11 +83,17 @@ class Namelist:
         namelist                = ''
         facc_strm_threshold     = 0
         dem_rez                 = None
+        dem_crs                 = ''
+        dem_transform           = ''
+        dem_bounds              = ''
+        dem_shape               = ''
 
     class Options:
         """Options"""
         overwrite_flag          = False
         verbose                 = False
+        resample_method         = None
+        name_resample_method    = ''
 
     class ParflowSpatialInformation:
         """Parflow grid info - see https://hf-hydrodata.readthedocs.io/en/latest/available_grids.html"""
@@ -120,7 +129,8 @@ class Namelist:
         self._read_inputyaml(filename)
         self._set_user_inputs()
         self._set_names()
-        self._make_subdirectory_structure()
+        self._make_subdirectories()
+        self._set_user_inputs()
 
     def _init_vars(self):
         """Initialize variables"""
@@ -133,11 +143,13 @@ class Namelist:
         self.time                = Namelist.Time()
         self.bbox_domain         = Namelist.BBoxDomain()
         self.bbox_parflow        = Namelist.BBoxParflow()
+        self.pp                  = Namelist.ParallelProcessing()
         
     def _set_names(self):
         """Set static directory and file names"""
         self._set_subdirectory_names()
         self._set_file_names()
+        self._set_file_full_path_names()
 
     def _set_subdirectory_names(self):
         """Set project subdirectory names"""
@@ -145,26 +157,17 @@ class Namelist:
         self.dirnames.wtd                     = os.path.join(self.dirnames.inputs,                  'wtd')
         self.dirnames.wtd_parflow             = os.path.join(self.dirnames.wtd,                     'parflow')
         self.dirnames.wtd_parflow_raw         = os.path.join(self.dirnames.wtd_parflow,             'raw')
-        self.dirnames.wtd_parflow_bilinear    = os.path.join(self.dirnames.wtd_parflow,             'bilinear')
-        self.dirnames.wtd_parflow_nearest     = os.path.join(self.dirnames.wtd_parflow,             'nearest')
-        self.dirnames.wtd_parflow_cubic       = os.path.join(self.dirnames.wtd_parflow,             'cubic')
+        self.dirnames.wtd_parflow_resampled   = os.path.join(self.dirnames.wtd_parflow,             'resampled')
         self.dirnames.wtd_fan                 = os.path.join(self.dirnames.wtd,                     'fan')
-        self.dirnames.dem                     = os.path.join(self.dirnames.inputs,                  'dem')
-        self.dirnames.twi                     = os.path.join(self.dirnames.inputs,                  'twi')
+        self.dirnames.topo                    = os.path.join(self.dirnames.inputs,                  'topo')
         self.dirnames.soils                   = os.path.join(self.dirnames.inputs,                  'soils')
         self.dirnames.domain                  = os.path.join(self.dirnames.inputs,                  'domain')
         self.dirnames.nhd                     = os.path.join(self.dirnames.inputs,                  'nhd')
         self.dirnames.output                  = os.path.join(self.dirnames.project,                 'outputs')
         self.dirnames.output_raw              = os.path.join(self.dirnames.output,                  'raw')
-        self.dirnames.output_raw_bilinear     = os.path.join(self.dirnames.output_raw,              'bilinear')
-        self.dirnames.output_raw_neareast     = os.path.join(self.dirnames.output_raw,              'nearest')
-        self.dirnames.output_raw_cubic        = os.path.join(self.dirnames.output_raw,              'cubic')
         self.dirnames.output_summary          = os.path.join(self.dirnames.output,                  'summary')
-        self.dirnames.output_summary_bilinear = os.path.join(self.dirnames.output_summary,          'bilinear')
-        self.dirnames.output_summary_nearest  = os.path.join(self.dirnames.output_summary,          'nearest')
-        self.dirnames.output_summary_cubic    = os.path.join(self.dirnames.output_summary,          'cubic')
 
-    def _make_subdirectory_structure(self):
+    def _make_subdirectories(self):
         """Make subdirectory structure"""
         for d in self.dirnames.__dict__:
             if not os.path.isdir(self.dirnames.__dict__[d]):
@@ -172,22 +175,25 @@ class Namelist:
 
     def _set_file_names(self):
         """Set static files names for intermediate output files"""
-        self.fnames.domain              = os.path.join(self.dirnames.domain,     'domain.gpkg')
-        self.fnames.domain_mask         = os.path.join(self.dirnames.domain,     'domain_mask.gpkg')
-        self.fnames.domain_buffered     = os.path.join(self.dirnames.domain,     'domain_buffered.gpkg')
-        self.fnames.hucs                = os.path.join(self.dirnames.domain,     'hucs.gpkg')
-        self.fnames.nhd                 = os.path.join(self.dirnames.nhd,        'nhdhr.gpkg')
-        self.fnames.dem                 = os.path.join(self.dirnames.dem,        'dem.tif')
-        self.fnames.dem_original        = os.path.join(self.dirnames.dem,        'dem_original.tif')
-        self.fnames.dem_breached        = os.path.join(self.dirnames.dem,        'dem_breached.tif')
-        self.fnames.soil_texture        = os.path.join(self.dirnames.soils,      'soiltexture.gpkg')
-        self.fnames.soil_transmissivity = os.path.join(self.dirnames.soils,      'soiltransmissivity.tiff')
-        self.fnames.flow_acc            = os.path.join(self.dirnames.dem,        'flow_acc.tiff')
-        self.fnames.slope               = os.path.join(self.dirnames.dem,        'slope.tiff')
-        self.fnames.facc_strm_mask      = os.path.join(self.dirnames.dem,        'facc_strm_mask.tiff')
-        self.fnames.twi                 = os.path.join(self.dirnames.twi,        'twi.tiff')
-        self.fnames.twi_upsample        = os.path.join(self.dirnames.twi,        'twi_upsample.tiff')
-        self.fnames.twi_downsample      = os.path.join(self.dirnames.twi,        'twi_downsample.tiff')
+        self.fnames.huc                 = 'huc.gpkg'
+        self.fnames.huc_mask            = 'huc.tiff'
+        self.fnames.huc_buffered        = 'huc.gpkg'
+        self.fnames.hucs                = 'hucs.gpkg'
+        self.fnames.nhd                 = 'nhd_hr.gpkg'
+        self.fnames.dem                 = 'dem.tiff'
+        self.fnames.dem_breached        = 'dem_breached.tiff'
+        self.fnames.soil_texture        = 'soil_texture.gpkg'
+        self.fnames.soil_transmissivity = 'soil_transmissivity.tiff'
+        self.fnames.flow_acc            = 'flow_acc.tiff'
+        self.fnames.slope               = 'slope.tiff'
+        self.fnames.facc_strm_mask      = 'facc_strm_mask.tiff'
+        self.fnames.twi                 = 'twi.tiff'
+        self.fnames.twi_mean            = 'twi_mean.tiff'
+    
+    def _set_file_full_path_names(self):
+        self.fnames.hucs                = os.path.join(self.dirnames.domain,'hucs.gpkg')
+        self.fnames.domain              = os.path.join(self.dirnames.domain,'domain.gpkg')
+        self.fnames.domain_mask         = os.path.join(self.dirnames.domain,'domain_mask.tiff')
 
     def _read_inputyaml(self,fname:str):
         self.fnames.namlistyaml = fname
@@ -209,6 +215,9 @@ class Namelist:
         name_end_date            = 'end_date'
         name_facc_strm_threshold = 'facc_strm_threshold'
         name_dem_rez             = 'dem_resolution'
+        name_resample_method     = 'wtd_resample_method'
+        name_pp_core_count       = 'pp_core_count'
+        name_pp_huc_break_lvl    = 'pp_huc_break_lvl'
         req_names = [name_project_dir,
                      name_huc,
                      name_pysda,
@@ -220,6 +229,7 @@ class Namelist:
                 sys.exit('ERROR required variable '+name+' not found '+self.fnames.namlistyaml)
         self.dirnames.project = os.path.abspath(self.vars.namelist[name_project_dir])
         self.dirnames.pysda   = os.path.abspath(self.vars.namelist[name_pysda])
+        if self.dirnames.pysda not in sys.path: sys.path.append(self.dirnames.pysda)
         self.vars.huc         = self.vars.namelist[name_huc]
         self.time.start_date  = self.vars.namelist[name_start_date]
         self.time.end_date    = self.vars.namelist[name_end_date]
@@ -240,6 +250,33 @@ class Namelist:
         if name_dem_rez in self.vars.namelist:
             try: self.vars.dem_rez = int(self.vars.namelist[name_dem_rez])
             except: sys.exit('ERROR '+name_dem_rez+' must be an integer')
+        if name_pp_core_count in self.vars.namelist or name_pp_huc_break_lvl in self.vars.namelist:
+            self.pp.flag = True
+            if name_pp_core_count in self.vars.namelist:
+                try: self.pp.core_count = int(self.vars.namelist[name_pp_core_count])
+                except: sys.exit('ERROR '+name_pp_core_count+' must be an integer')
+            else: 
+                self.pp.core_count = int(os.cpu_count()//2) # default
+            if name_pp_huc_break_lvl in self.vars.namelist:
+                try: self.pp.huc_break_lvl = int(self.vars.namelist[name_pp_huc_break_lvl])
+                except: sys.exit('ERROR '+name_pp_huc_break_lvl+' must be an integer')
+                if int(self.pp.huc_break_lvl < self.vars.huc_level):
+                    sys.exit(f'ERROR {name_pp_huc_break_lvl}) must be <= huc_level ({self.vars.huc_level})')
+            else:
+                self.pp.huc_break_lvl = 12 # default
+        if name_resample_method in self.vars.namelist:
+            if str(self.vars.namelist[name_resample_method]).lower().find('bilinear') != -1:
+                self.options.resample_method = rasterio.enums.Resampling.bilinear
+                self.options.name_resample_method = 'bilinear'
+            elif str(self.vars.namelist[name_resample_method]).lower().find('cubic') != -1:
+                self.options.resample_method = rasterio.enums.Resampling.cubic
+                self.options.name_resample_method = 'cubic'
+            elif str(self.vars.namelist[name_resample_method]).lower().find('nearest') != -1:
+                self.options.resample_method = rasterio.enums.Resampling.nearest
+                self.options.name_resample_method = 'nearest'
+        else: # default
+            self.options.resample_method = rasterio.enums.Resampling.bilinear
+            self.options.name_resample_method = 'bilinear'
         self._set_time_dim()
 
     def _set_time_dim(self):
@@ -254,12 +291,3 @@ class Namelist:
             datetime_dim.append(idatetime)
             idatetime += datetime.timedelta(days=1)
         self.time.datetime_dim = numpy.array(datetime_dim)
-
-    def _get_dummy_grid_fname(self):
-        for hrwtd_dir in [self.dirnames.wtd_parflow_bilinear,
-                          self.dirnames.wtd_parflow_nearest,
-                          self.dirnames.wtd_parflow_cubic]:
-            for idatetime in self.time.datetime_dim:
-                fname_hrwtd = os.path.join(hrwtd_dir,'wtd_'+idatetime.strftime('%Y%m%d')+'.tiff')
-                if os.path.isfile(fname_hrwtd): return fname_hrwtd
-        return None
