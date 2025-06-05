@@ -58,24 +58,25 @@ def _calc_strm_permanence(huc:geopandas.GeoDataFrame,dt_start:datetime.datetime,
                                              f'perennial_strms_{tstr}.tiff')
     fname_output_nonperennial = os.path.join(huc.iloc[0]['dirname_wtd_output_summary'],
                                              f'nonperennial_strms_{tstr}.tiff')
-
     if not os.path.isfile(fname_output_perennial) or not os.path.isfile(fname_output_nonperennial) or overwrite_flag:
-        stream_mask       = rasterio.open(huc.iloc[0]['fname_strm_mask'],'r').read(1).astype(numpy.int8)
+        strms       = rasterio.open(huc.iloc[0]['fname_strm_mask'],'r').read(1).astype(numpy.int8)
         fname_perc_inund  = os.path.join(huc.iloc[0]['dirname_wtd_output_summary'],
-                                        f'percent_inundated_grid_{tstr}.tiff')
+                                         f'percent_inundated_grid_{tstr}.tiff')
         with rasterio.open(fname_perc_inund,'r') as riods_piund:
             perc_inund = riods_piund.read(1)
             meta = riods_piund.meta.copy()  
-        perennial = numpy.where(numpy.isclose(perc_inund,100.),1,0).astype(numpy.int8)
-        perennial = numpy.where(stream_mask==1,perennial,0)
-        meta.update({'dtype':numpy.int8,'nodata':0})
+        strms_p = numpy.where(numpy.isclose(perc_inund,100.),1,0).astype(numpy.int8)
+        strms_p = numpy.where(strms==1,strms_p,0)
+        meta.update({'dtype':numpy.int8,
+                     'nodata':0})
         with rasterio.open(fname_output_perennial, "w", **meta) as riods_out:
-            riods_out.write(perennial,1)
-        nonperennial = numpy.where((perc_inund>0)&(perc_inund<100),perc_inund,numpy.nan)
-        nonperennial = numpy.where(stream_mask==1,nonperennial,numpy.nan)
-        meta.update({'dtype':numpy.float32,'nodata':numpy.nan})
+            riods_out.write(strms_p,1)
+        strms_np = numpy.where((perc_inund>0)&(perc_inund<100),perc_inund,numpy.nan)
+        strms_np = numpy.where(strms==1,strms_np,numpy.nan)
+        meta.update({'dtype':numpy.float32,
+                     'nodata':numpy.nan})
         with rasterio.open(fname_output_nonperennial, "w", **meta) as riods_out:
-            riods_out.write(nonperennial,1)
+            riods_out.write(strms_np,1)
 
 def _calc_summary_perc_inundated_main(namelist:twtnamelist.Namelist):
     """Calculate summary grid of inundated area"""

@@ -59,14 +59,11 @@ class twtfoliummap(folium.Map):
                          '_to_',
                          namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
                          '.tiff'])
-        dt = {'bilinear':namelist.dirnames.output_summary_bilinear,
-              'nearest': namelist.dirnames.output_summary_nearest,
-              'cubic':   namelist.dirnames.output_summary_cubic}
-        for name, dir in dt.items():
-            if os.path.isfile(os.path.join(dir,fname)):
-                self._add_grid(name= 'Mean WTD (m) ('+name+')',
-                               fname=os.path.join(dir,fname),
-                               cmap= branca.colormap.linear.viridis)
+        fname = os.path.join(namelist.dirnames.output_summary,fname)
+        cmap = branca.colormap.linear.viridis
+        self._add_grid(name= f'Mean WTD (m) ({namelist.options.name_resample_method})',
+                       fname=os.path.join(dir,fname),
+                       cmap = cmap)
 
     def add_percinundated(self,namelist:twtnamelist.Namelist):
         """Get folium map of mean percent inundation values for full grid"""
@@ -75,49 +72,38 @@ class twtfoliummap(folium.Map):
                          '_to_',
                          namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
                          '.tiff'])
-        dt = {'bilinear':namelist.dirnames.output_summary_bilinear,
-              'nearest': namelist.dirnames.output_summary_nearest,
-              'cubic':   namelist.dirnames.output_summary_cubic}
-        for name, dir in dt.items():
-            fname = os.path.join(dir,fname)
-            if os.path.isfile(fname):
-                self._add_grid(name='WTD-TWI %-Inundated ('+name+')',
-                              fname=fname,
-                              cmap=branca.colormap.linear.Reds_08)
+        fname = os.path.join(namelist.dirnames.output_summary,fname)
+        cmap = branca.colormap.linear.Reds_08
+        self._add_grid(name=f'WTD-TWI %-Inundated ({namelist.options.name_resample_method})',
+                       fname=fname,
+                       cmap=cmap)
 
     def add_nonperennial_strm_classification(self,namelist:twtnamelist.Namelist):
         """Add non-perennial stream classification to self"""
-        fname = "".join([namelist.time.datetime_dim[0].strftime('%Y%m%d'),
+        fname = "".join(['nonperennial_strms_',
+                         namelist.time.datetime_dim[0].strftime('%Y%m%d'),
                          '_to_',
                          namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
                          '.tiff'])
-        dt = {'bilinear':namelist.dirnames.output_summary_bilinear,
-              'nearest': namelist.dirnames.output_summary_nearest,
-              'cubic':   namelist.dirnames.output_summary_cubic}
-        for name, dir in dt.items():
-            fname = os.path.join(dir,'nonperennial_strms_'+fname)
-            cmap = branca.colormap.linear.Blues_07
-            if os.path.isfile(fname):
-                self._add_grid(name='WTD-TWI Non-perennial ('+name+')',
-                               fname=fname,
-                               cmap=cmap)
+        fname = os.path.join(namelist.dirnames.output_summary,fname)
+        cmap = branca.colormap.linear.Blues_07
+        self._add_grid(name='WTD-TWI Non-perennial ({namelist.options.name_resample_method})',
+                        fname=fname,
+                        cmap=cmap)
                 
     def add_perennial_strm_classification(self,namelist:twtnamelist.Namelist):
         """Get folium map of mean WTD values"""
-        fname = "".join([namelist.time.datetime_dim[0].strftime('%Y%m%d'),
+        fname = "".join(['perennial_strms_',
+                         namelist.time.datetime_dim[0].strftime('%Y%m%d'),
                          '_to_',
                          namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
                          '.tiff'])
-        dt = {'bilinear':namelist.dirnames.output_summary_bilinear,
-              'nearest': namelist.dirnames.output_summary_nearest,
-              'cubic':   namelist.dirnames.output_summary_cubic}
-        for name, dir in dt.items():
-            fname  = os.path.join(dir,'perennial_strms_'+fname)
-            cmap = branca.colormap.LinearColormap(['white','red'], vmin=0, vmax=1)
-            if os.path.isfile(fname):
-                self._add_grid(name='WTD-TWI Perennial ('+name+')',
-                               fname=fname,
-                               cmap=cmap)
+        fname = os.path.join(namelist.dirnames.output_summary,fname)
+        cmap = branca.colormap.LinearColormap(['white','red'], vmin=0, vmax=1)
+        if os.path.isfile(fname):
+            self._add_grid(name='WTD-TWI Perennial ({namelist.options.name_resample_method})',
+                            fname=fname,
+                            cmap=cmap)
         html_legend = """
         <div style="position: fixed; 
         bottom: 10px; left: 10px; width: 200px; height: auto; 

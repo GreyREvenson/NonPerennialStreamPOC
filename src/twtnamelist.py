@@ -3,7 +3,6 @@ import os,sys,math,rasterio,yaml,datetime,numpy,geopandas,hf_hydrodata,pygeohydr
 class Namelist:
 
     class DirectoryNames:
-        """Directory names"""
         project                 = ''
         inputs                  = ''
         wtd                     = ''
@@ -33,14 +32,9 @@ class Namelist:
         datetime_dim            = ''
 
     class FileNames:
-        """File names including full path"""
         namlistyaml             = ''
         domain                  = ''
         domain_mask             = ''
-        hucs                    = ''
-        huc                     = ''
-        huc_mask                = ''
-        huc_buffered            = ''
         nhd                     = ''
         dem                     = ''
         dem_user                = ''
@@ -53,241 +47,234 @@ class Namelist:
         twi                     = ''
         twi_mean                = ''
 
-    class BBoxDomain:
-        lat_min = ''
-        lat_max = ''
-        lon_min = ''
-        lon_max = ''
-
-    class BBoxParflow:
-        conus1grid_minx = ''
-        conus1grid_miny = ''
-        conus1grid_maxx = ''
-        conus1grid_maxy = ''
-        conus2grid_minx = ''
-        conus2grid_miny = ''
-        conus2grid_maxx = ''
-        conus2grid_maxy = ''
-
-    class ParallelProcessing:
-        flag = False
-        core_count              = ''
-        huc_break_lvl           = ''
-
-    class Variables:
-        """Variables"""
-        huc                     = ''
-        huc_level               = ''
-        start_date              = ''
-        end_date                = ''
-        namelist                = ''
-        facc_strm_threshold     = 0
-        dem_rez                 = None
-        dem_crs                 = ''
-        dem_transform           = ''
-        dem_bounds              = ''
-        dem_shape               = ''
-
     class Options:
-        """Options"""
+        name_domain             = ''    
         overwrite_flag          = False
         verbose                 = False
         resample_method         = None
         name_resample_method    = ''
-
-    class ParflowSpatialInformation:
-        """Parflow grid info - see https://hf-hydrodata.readthedocs.io/en/latest/available_grids.html"""
-        conus1_proj      = '+proj=lcc +lat_1=33 +lat_2=45 +lon_0=-96.0 +lat_0=39 +a=6378137.0 +b=6356752.31'
-        conus1_spatext   = tuple([-121.47939483437318, 31.651836025255015, -76.09875469594509, 50.49802132270979])
-        conus1_transform = rasterio.transform.Affine(1000.0,0.0,-1885055.4995,0.0,1000.0,-604957.0654)
-        conus1_shape     = (1888,3342)
-        conus2_proj      = '+proj=lcc +lat_1=30 +lat_2=60 +lon_0=-97.0 +lat_0=40.0000076294444 +a=6370000.0 +b=6370000'
-        conus2_spatext   = tuple([-126.88755692881833, 21.8170599154073, -64.7677149695924, 53.20274381640737])
-        conus2_transform = rasterio.transform.Affine(1000.0,0.0,-2208000.30881173,0.0,1000.0,-1668999.65483222)
-        conus2_shape     = (3256,4442)
-
-    class SoilTransmissivity:
-        """Soil transmissivity factor. Table 1 of Zhang et al. (2016) https://doi.org/10.5194/bg-13-1387-2016"""
-        dt = {'clay heavy'     :3.2,
-              'silty clay'     :3.1,
-              'clay'           :2.8,
-              'silty clay loam':2.9,
-              'clay loam'      :2.7,
-              'silt'           :3.4,
-              'silt loam'      :2.6,
-              'sandy clay'     :2.5,
-              'loam'           :2.5,
-              'sandy clay loam':2.4,
-              'sandy loam'     :2.3,
-              'loamy sand'     :2.2,
-              'sand'           :2.1,
-              'organic'        :2.5}
+        huc_break_lvl           = ''
+        facc_strm_threshold     = 0
+        pp                      = False
+        core_count              = ''
 
     def __init__(self,filename:str):
-        """Initialize namelist"""
         self._init_vars()
-        self._read_inputyaml(filename)
-        self._set_user_inputs()
+        self._set_user_inputs(filename)
         self._set_names()
-        self._make_subdirectories()
-        self._set_user_inputs()
+        self._make_dirs()
 
     def _init_vars(self):
         """Initialize variables"""
-        self.dirnames            = Namelist.DirectoryNames()
-        self.fnames              = Namelist.FileNames()
-        self.vars                = Namelist.Variables()
-        self.options             = Namelist.Options()
-        self.parflow             = Namelist.ParflowSpatialInformation()
-        self.soil_transmissivity = Namelist.SoilTransmissivity()
-        self.time                = Namelist.Time()
-        self.bbox_domain         = Namelist.BBoxDomain()
-        self.bbox_parflow        = Namelist.BBoxParflow()
-        self.pp                  = Namelist.ParallelProcessing()
-        
+        self.dirnames = Namelist.DirectoryNames()
+        self.fnames   = Namelist.FileNames()
+        self.options  = Namelist.Options()
+        self.time     = Namelist.Time()
+
     def _set_names(self):
-        """Set static directory and file names"""
-        self._set_subdirectory_names()
-        self._set_file_names()
-        self._set_file_full_path_names()
+        self._set_d_names()
+        self._set_f_names()
 
-    def _set_subdirectory_names(self):
-        """Set project subdirectory names"""
-        self.dirnames.inputs                  = os.path.join(self.dirnames.project,                 'inputs')
-        self.dirnames.wtd                     = os.path.join(self.dirnames.inputs,                  'wtd')
-        self.dirnames.wtd_parflow             = os.path.join(self.dirnames.wtd,                     'parflow')
-        self.dirnames.wtd_parflow_raw         = os.path.join(self.dirnames.wtd_parflow,             'raw')
-        self.dirnames.wtd_parflow_resampled   = os.path.join(self.dirnames.wtd_parflow,             'resampled')
-        self.dirnames.wtd_fan                 = os.path.join(self.dirnames.wtd,                     'fan')
-        self.dirnames.topo                    = os.path.join(self.dirnames.inputs,                  'topo')
-        self.dirnames.soils                   = os.path.join(self.dirnames.inputs,                  'soils')
-        self.dirnames.domain                  = os.path.join(self.dirnames.inputs,                  'domain')
-        self.dirnames.nhd                     = os.path.join(self.dirnames.inputs,                  'nhd')
-        self.dirnames.output                  = os.path.join(self.dirnames.project,                 'outputs')
-        self.dirnames.output_raw              = os.path.join(self.dirnames.output,                  'raw')
-        self.dirnames.output_summary          = os.path.join(self.dirnames.output,                  'summary')
+    def _set_d_names(self):
+        self.dirnames.inputs                  = os.path.join(self.dirnames.project,     'inputs')
+        self.dirnames.wtd                     = os.path.join(self.dirnames.inputs,      'wtd')
+        self.dirnames.wtd_parflow             = os.path.join(self.dirnames.wtd,         'parflow')
+        self.dirnames.wtd_parflow_raw         = os.path.join(self.dirnames.wtd_parflow, 'raw')
+        self.dirnames.wtd_parflow_resampled   = os.path.join(self.dirnames.wtd_parflow, 'resampled')
+        self.dirnames.wtd_fan                 = os.path.join(self.dirnames.wtd,         'fan')
+        self.dirnames.topo                    = os.path.join(self.dirnames.inputs,      'topo')
+        self.dirnames.soils                   = os.path.join(self.dirnames.inputs,      'soils')
+        self.dirnames.domain                  = os.path.join(self.dirnames.inputs,      'domain')
+        self.dirnames.nhd                     = os.path.join(self.dirnames.inputs,      'nhd')
+        self.dirnames.output                  = os.path.join(self.dirnames.project,     'outputs')
+        self.dirnames.output_raw              = os.path.join(self.dirnames.output,      'raw')
+        self.dirnames.output_summary          = os.path.join(self.dirnames.output,      'summary')
 
-    def _make_subdirectories(self):
+    def _set_f_names(self):
+        self.fnames.domain                    = os.path.join(self.dirnames.domain,      'domain.gpkg')
+        self.fnames.domain_mask               = os.path.join(self.dirnames.domain,      'domain_mask.tiff')
+        self.fnames.nhd                       = os.path.join(self.dirnames.nhd,         'nhd_hr.gpkg')
+        self.fnames.dem                       = os.path.join(self.dirnames.topo,        'dem.tiff')
+        self.fnames.dem_breached              = os.path.join(self.dirnames.topo,        'dem_breached.tiff')
+        self.fnames.soil_texture              = os.path.join(self.dirnames.soils,       'soil_texture.gpkg')
+        self.fnames.soil_transmissivity       = os.path.join(self.dirnames.soils,       'soil_transmissivity.tiff')
+        self.fnames.flow_acc                  = os.path.join(self.dirnames.topo,        'flow_acc.tiff')
+        self.fnames.slope                     = os.path.join(self.dirnames.topo,        'slope.tiff')
+        self.fnames.facc_strm_mask            = os.path.join(self.dirnames.topo,        'facc_strm_mask.tiff')
+        self.fnames.twi                       = os.path.join(self.dirnames.topo,        'twi.tiff')
+        self.fnames.twi_mean                  = os.path.join(self.dirnames.topo,        'twi_mean.tiff')
+
+    def _make_dirs(self):
         """Make subdirectory structure"""
         for d in self.dirnames.__dict__:
             if not os.path.isdir(self.dirnames.__dict__[d]):
                 os.makedirs(self.dirnames.__dict__[d])
 
-    def _set_file_names(self):
-        """Set static files names for intermediate output files"""
-        self.fnames.huc                 = 'huc.gpkg'
-        self.fnames.huc_mask            = 'huc.tiff'
-        self.fnames.huc_buffered        = 'huc.gpkg'
-        self.fnames.hucs                = 'hucs.gpkg'
-        self.fnames.nhd                 = 'nhd_hr.gpkg'
-        self.fnames.dem                 = 'dem.tiff'
-        self.fnames.dem_breached        = 'dem_breached.tiff'
-        self.fnames.soil_texture        = 'soil_texture.gpkg'
-        self.fnames.soil_transmissivity = 'soil_transmissivity.tiff'
-        self.fnames.flow_acc            = 'flow_acc.tiff'
-        self.fnames.slope               = 'slope.tiff'
-        self.fnames.facc_strm_mask      = 'facc_strm_mask.tiff'
-        self.fnames.twi                 = 'twi.tiff'
-        self.fnames.twi_mean            = 'twi_mean.tiff'
-    
-    def _set_file_full_path_names(self):
-        self.fnames.hucs                = os.path.join(self.dirnames.domain,'hucs.gpkg')
-        self.fnames.domain              = os.path.join(self.dirnames.domain,'domain.gpkg')
-        self.fnames.domain_mask         = os.path.join(self.dirnames.domain,'domain_mask.tiff')
-
     def _read_inputyaml(self,fname:str):
         self.fnames.namlistyaml = fname
         with open(self.fnames.namlistyaml,'r') as yamlf:
             try: 
-                self.vars.namelist = yaml.safe_load(yamlf)
+                return yaml.safe_load(yamlf)
             except yaml.YAMLError as exc: 
                 print(exc)
 
-    def _set_user_inputs(self):
+    def _set_user_inputs(self,fname_yaml_input:str):
         """Set variables using read-in values"""
-        name_project_dir         = 'project_directory'
-        name_huc                 = 'huc'
-        name_overwrite           = 'overwrite'
-        name_verbose             = 'verbose'
-        name_pysda               = 'pysda'
-        name_dem                 = 'dem'
-        name_start_date          = 'start_date'
-        name_end_date            = 'end_date'
-        name_facc_strm_threshold = 'facc_strm_threshold'
-        name_dem_rez             = 'dem_resolution'
-        name_resample_method     = 'wtd_resample_method'
-        name_pp_core_count       = 'pp_core_count'
-        name_pp_huc_break_lvl    = 'pp_huc_break_lvl'
-        req_names = [name_project_dir,
-                     name_huc,
-                     name_pysda,
-                     name_start_date,
-                     name_end_date,
-                     name_facc_strm_threshold]
-        for name in req_names:
-            if name not in self.vars.namelist: 
-                sys.exit('ERROR required variable '+name+' not found '+self.fnames.namlistyaml)
-        self.dirnames.project = os.path.abspath(self.vars.namelist[name_project_dir])
-        self.dirnames.pysda   = os.path.abspath(self.vars.namelist[name_pysda])
-        if self.dirnames.pysda not in sys.path: sys.path.append(self.dirnames.pysda)
-        self.vars.huc         = self.vars.namelist[name_huc]
-        self.time.start_date  = self.vars.namelist[name_start_date]
-        self.time.end_date    = self.vars.namelist[name_end_date]
-        self.vars.huc_level   = len(self.vars.huc)
-        if self.vars.huc_level not in (2,4,6,8,10,12): 
-            sys.exit('ERROR invalid huc level in namelist file')
+        #
+        #
+        userinput = self._read_inputyaml(fname_yaml_input)
+        #
+        #
+        name_var = 'project_directory'
+        if name_var not in userinput:
+            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
+        if not os.path.isdir(userinput[name_var]):
+            try:
+                os.mkdir(userinput[name_var])
+            except OSError as e:
+                sys.exit(f'ERROR could not create project directory {userinput[name_var]}: {e}')
+        self.dirnames.project = os.path.abspath(userinput[name_var])
+        #
+        #
+        name_var = 'domain_name'
+        if name_var not in userinput:
+            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
+        self.options.name_domain = userinput[name_var]
+        #
+        #
+        name_var = 'start_date'
+        if name_var not in userinput:
+            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
         try:
-            threshold = int(self.vars.namelist[name_facc_strm_threshold])
+            dt = userinput[name_var].split('-')
+            dt = datetime.datetime(year=int(dt[0]),month=int(dt[1]),day=int(dt[2]))
+            self.time.start_date = dt
         except ValueError:
-            sys.exit('ERROR facc_strm_threshold must be an integer')
-        self.vars.facc_strm_threshold = threshold
-        if name_overwrite in self.vars.namelist and str(self.vars.namelist[name_overwrite]).upper().find('TRUE') != -1:
+            sys.exit(f'ERROR invalid start date {userinput[name_var]} in {fname_yaml_input}')
+        #
+        #
+        name_var = 'end_date'
+        if name_var not in userinput:
+            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
+        try:
+            dt = userinput[name_var].split('-')
+            dt = datetime.datetime(year=int(dt[0]),month=int(dt[1]),day=int(dt[2]))
+            self.time.end_date = dt
+        except ValueError:
+            sys.exit(f'ERROR invalid start date {userinput[name_var]} in {fname_yaml_input}')
+        #
+        #
+        dt_dim = list()
+        idt = self.time.start_date
+        while idt <= self.time.end_date:
+            dt_dim.append(idt)
+            idt += datetime.timedelta(days=1)
+        self.time.datetime_dim = numpy.array(dt_dim)
+        #
+        #
+        name_var = 'facc_strm_threshold'
+        if name_var not in userinput:
+            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
+        try:
+            self.options.facc_strm_threshold = int(userinput[name_var])
+        except ValueError:
+            sys.exit(f'ERROR invalid start date {userinput[name_var]} in {fname_yaml_input}')
+        #
+        #
+        name_pysda = 'pysda'
+        if name_pysda not in userinput:
+            sys.exit(f'ERROR required variable {name_pysda} not found {fname_yaml_input}')
+        if not os.path.isdir(userinput[name_pysda]):
+            sys.exit(f'ERROR pysda directory {userinput[name_pysda]} does not exist')
+        if not os.path.isfile(os.path.join(userinput[name_pysda],'sdapoly.py')): 
+            sys.exit(f'ERROR pysda directory {userinput[name_pysda]} does not contain sdapoly.py')
+        if not os.path.isfile(os.path.join(userinput[name_pysda],'sdaprop.py')): 
+            sys.exit(f'ERROR pysda directory {userinput[name_pysda]} does not contain sdaprop.py')
+        self.dirnames.pysda = os.path.abspath(userinput[name_pysda])
+        if self.dirnames.pysda not in sys.path: sys.path.append(self.dirnames.pysda)
+        #
+        #
+        name_var = 'dem'
+        if name_var in userinput:
+            if not os.path.isfile(os.path.abspath(userinput[name_var])):
+                sys.exit(f'ERROR invalid dem input file {userinput[name_var]} in {fname_yaml_input}')
+            self.fnames.dem_user = os.path.abspath(userinput[name_var])
+        #
+        #
+        name_var = 'overwrite'
+        if name_var in userinput and str(userinput[name_var]).upper().find('TRUE') != -1:
             self.options.overwrite_flag = True
-        if name_verbose in self.vars.namelist and str(self.vars.namelist[name_verbose]).upper().find('TRUE') != -1:
+        else:
+            self.options.overwrite_flag = False
+        #
+        #
+        name_var = 'verbose'
+        if name_var in userinput and str(userinput[name_var]).upper().find('TRUE') != -1:
             self.options.verbose = True
-        if name_dem in self.vars.namelist:
-            self.fnames.dem_user = os.path.abspath(self.vars.namelist[name_dem])
-        if name_dem_rez in self.vars.namelist:
-            try: self.vars.dem_rez = int(self.vars.namelist[name_dem_rez])
-            except: sys.exit('ERROR '+name_dem_rez+' must be an integer')
-        if name_pp_core_count in self.vars.namelist or name_pp_huc_break_lvl in self.vars.namelist:
-            self.pp.flag = True
-            if name_pp_core_count in self.vars.namelist:
-                try: self.pp.core_count = int(self.vars.namelist[name_pp_core_count])
-                except: sys.exit('ERROR '+name_pp_core_count+' must be an integer')
-            else: 
-                self.pp.core_count = int(os.cpu_count()//2) # default
-            if name_pp_huc_break_lvl in self.vars.namelist:
-                try: self.pp.huc_break_lvl = int(self.vars.namelist[name_pp_huc_break_lvl])
-                except: sys.exit('ERROR '+name_pp_huc_break_lvl+' must be an integer')
-                if int(self.pp.huc_break_lvl < self.vars.huc_level):
-                    sys.exit(f'ERROR {name_pp_huc_break_lvl}) must be <= huc_level ({self.vars.huc_level})')
-            else:
-                self.pp.huc_break_lvl = 12 # default
-        if name_resample_method in self.vars.namelist:
-            if str(self.vars.namelist[name_resample_method]).lower().find('bilinear') != -1:
+        else:
+            self.options.verbose = False
+        #
+        #
+        name_var = 'wtd_resample_method'
+        if name_var in userinput:
+            if str(userinput[name_var]).lower().find('bilinear') != -1:
                 self.options.resample_method = rasterio.enums.Resampling.bilinear
                 self.options.name_resample_method = 'bilinear'
-            elif str(self.vars.namelist[name_resample_method]).lower().find('cubic') != -1:
+            elif str(userinput[name_var]).lower().find('cubic') != -1:
                 self.options.resample_method = rasterio.enums.Resampling.cubic
                 self.options.name_resample_method = 'cubic'
-            elif str(self.vars.namelist[name_resample_method]).lower().find('nearest') != -1:
+            elif str(userinput[name_var]).lower().find('nearest') != -1:
                 self.options.resample_method = rasterio.enums.Resampling.nearest
                 self.options.name_resample_method = 'nearest'
-        else: # default
+            else:
+                sys.exit(f'ERROR invalid wtd resample method {userinput[name_var]} in {fname_yaml_input}')
+        else:
             self.options.resample_method = rasterio.enums.Resampling.bilinear
             self.options.name_resample_method = 'bilinear'
-        self._set_time_dim()
+        #
+        #
+        name_var = 'pp_core_count'
+        if name_var in userinput:
+            try:
+                self.options.core_count = int(userinput[name_var])
+            except ValueError:
+                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
+        #
+        #
+        name_var = 'pp_huc_break_lvl'
+        if name_var in userinput:
+            try:
+                self.options.huc_break_lvl = int(userinput[name_var])
+            except ValueError:
+                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
+        if name_var not in userinput and isinstance(self.options.core_count,int):
+            sys.exit(f'ERROR {name_var} must be defined if pp_core_count is defined in {fname_yaml_input}')
+        #
+        #
+        if isinstance(self.options.huc_break_lvl, int) or isinstance(self.options.core_count):
+            self.options.pp = True
+        else:
+            self.options.pp = False
 
-    def _set_time_dim(self):
-        """Create an array of datetime objects, one for each time step in simulation period"""
-        start_date_split = self.time.start_date.split('-')
-        start_datetime = datetime.datetime(year=int(start_date_split[0]),month=int(start_date_split[1]),day=int(start_date_split[2]))
-        end_date_split = self.time.end_date.split('-')
-        end_datetime = datetime.datetime(year=int(end_date_split[0]),month=int(end_date_split[1]),day=int(end_date_split[2]))
-        datetime_dim = list()
-        idatetime = start_datetime
-        while idatetime <= end_datetime:
-            datetime_dim.append(idatetime)
-            idatetime += datetime.timedelta(days=1)
-        self.time.datetime_dim = numpy.array(datetime_dim)
+    def get_subdomain_fnames(self):
+        if namelist.options.verbose: print('calling _set_subdomain_comp_units')
+        dtfnames = {'fname_subdomain'           : [namelist.dirnames.domain,'subdomain.gpkg'],
+                    'fname_subdomain_mask'      : [namelist.dirnames.domain,'subdomain_mask.tiff'],
+                    'fname_dem'                 : [namelist.dirnames.topo,namelist.fnames.dem],
+                    'fname_dem_breached'        : [namelist.dirnames.topo,namelist.fnames.dem_breached],
+                    'fname_facc'                : [namelist.dirnames.topo,namelist.fnames.flow_acc],
+                    'fname_strm_mask'           : [namelist.dirnames.topo,namelist.fnames.facc_strm_mask],
+                    'fname_slope'               : [namelist.dirnames.topo,namelist.fnames.slope],
+                    'fname_twi'                 : [namelist.dirnames.topo,namelist.fnames.twi],
+                    'fname_twi_mean'            : [namelist.dirnames.topo,namelist.fnames.twi_mean],
+                    'fname_soil_texture'        : [namelist.dirnames.soils,namelist.fnames.soil_texture],
+                    'fname_soil_transmissivity' : [namelist.dirnames.soils,namelist.fnames.soil_transmissivity],
+                    'fname_nhd'                 : [namelist.dirnames.nhd,namelist.fnames.nhd]}
+        dtdnames = {'dirname_wtd_raw'           : namelist.dirnames.wtd_parflow_raw,
+                    'dirname_wtd_reprj_resmple' : namelist.dirnames.wtd_parflow_resampled,
+                    'dirname_wtd_output_raw'    : namelist.dirnames.output_raw,
+                    'dirname_wtd_output_summary': namelist.dirnames.output_summary}
+        if not os.path.isfile(namelist.fnames.hucs) or namelist.options.overwrite_flag:
+            brk_lvl = namelist.pp.huc_break_lvl
+            if not isinstance(brk_lvl,int): 
+                brk_lvl = len(str(namelist.vars.huc))
