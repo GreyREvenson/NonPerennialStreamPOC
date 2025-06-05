@@ -53,14 +53,14 @@ def _set_domain(namelist:twtnamelist.Namelist):
         else:
             for fname in dtfnames:
                 domain[fname] = domain['domain_id'].apply(lambda domain_id: os.path.join(os.path.dirname(dtfnames[fname]), 
-                                                                                         'sub_domains',
+                                                                                         '_sd',
                                                                                          str(domain_id),
                                                                                          os.path.basename(dtfnames[fname])))
                 for _fname in domain[fname].tolist():
                     os.makedirs(os.path.dirname(_fname), exist_ok=True)
             for dname in dtdnames:
                 domain[dname] = domain['domain_id'].apply(lambda domain_id: os.path.join(dtdnames[dname], 
-                                                                                         'sub_domains',
+                                                                                         '_subdomain',
                                                                                          str(domain_id)))
                 for _dname in domain[dname].tolist():
                     os.makedirs(_dname, exist_ok=True)
