@@ -1,4 +1,4 @@
-import os,sys,numpy,pandas,geopandas,rasterio,soiltexture,twtnamelist,multiprocessing
+import os,sys,numpy,pandas,geopandas,rasterio,soiltexture,twtnamelist,multiprocessing,twtutils
 
 def set_soils(namelist:twtnamelist.Namelist):
     """Get soil texture and transmissivity data for domain"""
@@ -6,14 +6,6 @@ def set_soils(namelist:twtnamelist.Namelist):
     if namelist.dirnames.pysda not in sys.path: sys.path.append(namelist.dirnames.pysda)
     _set_soil_texture_main(namelist)
     _set_soil_transmissivity_main(namelist)
-
-def _pp_func(func,args:tuple,namelist:twtnamelist.Namelist,MAX_PP_TIME_LENGTH_SECONDS:int=900):
-    with multiprocessing.Pool(processes=min(namelist.pp.core_count, len(args))) as pool:
-        _async_out = [pool.apply_async(func, (arg,)) for arg in args]
-        for _out in _async_out:
-            try: _out.get(timeout=MAX_PP_TIME_LENGTH_SECONDS)
-            #except multiprocessing.TimeoutError: pass
-            except: pass
 
 def _set_soil_texture_main(namelist:twtnamelist.Namelist):
     if namelist.options.verbose: print('calling _set_soil_texture_main')
@@ -23,7 +15,7 @@ def _set_soil_texture_main(namelist:twtnamelist.Namelist):
             if not os.path.isfile(arg.iloc[0]['fname_soil_texture']) or namelist.options.overwrite_flag]
     if len(args) > 0:
         if namelist.options.pp:
-            _pp_func(_set_soil_texture,args,namelist)
+            twtutils.pp_func(_set_soil_texture,args,namelist)
         else:
             for arg in args: _set_soil_texture(arg)
     if not all([os.path.isfile(fname) 
@@ -42,7 +34,7 @@ def _set_soil_transmissivity_main(namelist:twtnamelist.Namelist):
             if not os.path.isfile(arg.iloc[0]['fname_soil_transmissivity']) or namelist.options.overwrite_flag]
     if len(args) > 0:
         if namelist.options.pp:
-            _pp_func(_set_soil_transmissivity,args,namelist)
+            twtutils.pp_func(_set_soil_transmissivity,args,namelist)
         else:
             for arg in args: _set_soil_transmissivity(arg)
     if not all([os.path.isfile(fname) 

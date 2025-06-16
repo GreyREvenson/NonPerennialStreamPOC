@@ -65,7 +65,6 @@ class Namelist:
         self._make_dirs()
 
     def _init_vars(self):
-        """Initialize variables"""
         self.dirnames = Namelist.DirectoryNames()
         self.fnames   = Namelist.FileNames()
         self.options  = Namelist.Options()
@@ -86,7 +85,8 @@ class Namelist:
         self.dirnames.soils                   = os.path.join(self.dirnames.inputs,      'soils')
         self.dirnames.domain                  = os.path.join(self.dirnames.inputs,      'domain')
         self.dirnames.nhd                     = os.path.join(self.dirnames.inputs,      'nhd')
-        self.dirnames.output                  = os.path.join(self.dirnames.project,     'outputs')
+        if not os.path.isdir(self.dirnames.output): # in case using user-specified output directory
+            self.dirnames.output              = os.path.join(self.dirnames.project,     'outputs')
         self.dirnames.output_raw              = os.path.join(self.dirnames.output,      'raw')
         self.dirnames.output_summary          = os.path.join(self.dirnames.output,      'summary')
 
@@ -134,6 +134,17 @@ class Namelist:
             except OSError as e:
                 sys.exit(f'ERROR could not create project directory {userinput[name_var]}: {e}')
         self.dirnames.project = os.path.abspath(userinput[name_var])
+        #
+        #
+        name_var = 'output_directory'
+        if name_var not in userinput:
+            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
+        if not os.path.isdir(userinput[name_var]):
+            try:
+                os.mkdir(userinput[name_var])
+            except OSError as e:
+                sys.exit(f'ERROR could not create project directory {userinput[name_var]}: {e}')
+        self.dirnames.output = os.path.abspath(userinput[name_var])
         #
         #
         name_var = 'domain_name'

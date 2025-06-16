@@ -1,6 +1,5 @@
-import os,sys,numpy,geopandas,py3dep,rasterio,shutil,twtnamelist,pygeohydro,whitebox,shapely
+import os,sys,numpy,geopandas,py3dep,rasterio,shutil,twtnamelist,pygeohydro,whitebox,shapely,multiprocessing,twtutils
 from scipy.ndimage import uniform_filter
-import multiprocessing
 
 def set_topo(namelist:twtnamelist.Namelist):
     if namelist.options.verbose: print('calling calc_topo')
@@ -27,16 +26,6 @@ def _set_domain_crs(namelist:twtnamelist.Namelist):
         domain = domain.to_crs(crs=crss[0])
         domain.to_file(namelist.fnames.domain, driver='GPKG')
 
-def _pp_func(func,args:tuple,namelist:twtnamelist.Namelist,MAX_PP_TIME_LENGTH_SECONDS:int=900):
-    with multiprocessing.Pool(processes=min(namelist.options.core_count, len(args))) as pool:
-        if isinstance(args[0], list) or isinstance(args[0], tuple):
-            _async_out = [pool.apply_async(func, arg) for arg in args]
-        else:
-            _async_out = [pool.apply_async(func, (arg,)) for arg in args]
-        for _out in _async_out:
-            try: _out.get(timeout=MAX_PP_TIME_LENGTH_SECONDS)
-            except multiprocessing.TimeoutError: pass
-
 def _breach_dem_main(namelist:twtnamelist.Namelist):
     if namelist.options.verbose: print('calling _breach_dem_main')
     #TODO change to catch timeout errors for _breach_dem and call _breach_dem_filled only for those
@@ -46,7 +35,7 @@ def _breach_dem_main(namelist:twtnamelist.Namelist):
             if not os.path.isfile(arg.iloc[0]['fname_dem_breached']) or namelist.options.overwrite_flag]
     if len(args) > 0:
         if namelist.options.pp: 
-            _pp_func(_breach_dem,args,namelist)
+            twtutils.pp_func(_breach_dem,args,namelist)
         else:
             for arg in args: _breach_dem(arg)
     args = [arg for arg in args
@@ -273,53 +262,6 @@ def _break_dem_main(namelist:twtnamelist.Namelist):
                                             "dtype"     : numpy.float32})
                     with rasterio.open(r['fname_dem'],'w',**masked_dem_meta) as riods_masked_dem:
                         riods_masked_dem.write(masked_dem_array[0],1)
-
-def _mask(args):
-    fname, geom = args
-    with rasterio.open(fname,'r') as riods:
-        masked_array, masked_transform = rasterio.mask.mask(dataset     = riods, 
-                                                            shapes      = geom, 
-                                                            crop        = True, 
-                                                            all_touched = True, 
-                                                            filled      = False, 
-                                                            nodata      = numpy.nan)
-        masked_meta = riods.meta.copy()
-        masked_meta.update({"height"    : masked_array.shape[1],
-                            "width"     : masked_array.shape[2],
-                            "transform" : masked_transform,
-                            "nodata"    : numpy.nan,
-                            "dtype"     : numpy.float32})
-    return masked_array,masked_meta
-
-def _merge(fname_col,fname_out,namelist):
-    args = zip(namelist.pp.hucs[fname_col],namelist.pp.hucs['geometry'])
-    with multiprocessing.Pool(processes=min(namelist.options.pp_core_count,len(args))) as pool:
-        masked_data = pool.map(_mask, args)
-    masked_arrays,masked_metas = masked_data
-    try:
-        riodss, memfiles = list(), list()
-        for masked_array,masked_meta in zip(masked_arrays,masked_metas):
-            memfile = rasterio.io.MemoryFile()
-            riods = memfile.open(**masked_meta)
-            riods.write(masked_array)
-            riodss.append(riods)
-            memfiles.append(memfile)
-        from rasterio.merge import merge
-        mosaic, out_trans = merge(riodss)
-        out_meta = riodss[0].meta.copy()
-        out_meta.update({"driver"   : "GTiff",
-                        "height"    : mosaic.shape[1],
-                        "width"     : mosaic.shape[2],
-                        "transform" : out_trans})
-        with rasterio.open(fname_out,"w",**out_meta) as riods:
-            riods.write(mosaic)
-    finally:
-        for riods in riodss:
-            if riods and not riods.closed:
-                 riods.close()
-        for memfile in memfiles:
-            if memfile and not memfile.closed:
-                memfile.close()
 
 def _breach_dem(domain:geopandas.GeoDataFrame):
     wbt = whitebox.WhiteboxTools()
