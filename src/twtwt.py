@@ -1,33 +1,30 @@
 import os,sys,math,datetime,geopandas,hf_hydrodata,rasterio,numpy,twtnamelist,multiprocessing,shapely,twtutils
 
-def set_wtd(namelist:twtnamelist.Namelist):
+def set_wtd_main(namelist:twtnamelist.Namelist):
     """Get water table depth data for domain"""
-    if namelist.options.verbose: print('calling set_wtd')
-    _download_hydroframe_data_main(namelist)
-    #_calc_avgwtd_grid(namelist)
-
-def _download_hydroframe_data_main(namelist:twtnamelist.Namelist):
-    if namelist.options.verbose: print('calling _download_hydroframe_data_main')
+    if namelist.options.verbose: print('calling set_wtd_main')
     domain = geopandas.read_file(namelist.fnames.domain)
-    args = list()
-    for i,r in domain.iterrows():
-        f = False
-        for dt in namelist.time.datetime_dim:
-            fname = os.path.join(r['dirname_wtd_raw'],f'wtd_{dt.strftime('%Y%m%d')}.tiff')
-            if not os.path.isfile(fname):
-                f = True
-                break
-        if f:
-            args.append([domain.loc[[i]],namelist.time.datetime_dim[0],namelist.time.datetime_dim[-1]])
-    if len(args) > 0:
-        if namelist.options.pp: 
-            twtutils.pp_func(_download_hydroframe_data,args,namelist)
-        else:
-            for arg in args: _download_hydroframe_data(*arg)
-    for _,r in domain.iterrows():
-        if not all([os.path.isfile(os.path.join(r['dirname_wtd_raw'],f'wtd_{dt.strftime('%Y%m%d')}.tiff')) 
-                    for dt in namelist.time.datetime_dim]):
-            print(f'ERROR _download_hydroframe_data_main missing wtd grids for domain {r['domain_id']}')
+    args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
+                    [namelist.options.overwrite]   * len(domain)))
+    if namelist.options.pp and len(args) > 1:
+        with multiprocessing.Pool(processes=min(namelist.options.core_count, len(args))) as pool:
+            _async_out = [pool.apply_async(_set_wtd, arg) for arg in args]
+            for i in range(len(_async_out)):
+                try: 
+                    _async_out[i] = _async_out[i].get()
+                except Exception as e: 
+                    _async_out[i] = e
+    for i in range(len(_async_out)):
+        if _async_out[i] is not None: 
+            id = args[i][0].iloc[0]['domain_id']
+            print(f'ERROR _set_wtd failed for domain {id} with error {_async_out[i]}')
+
+def _set_wtd(domain:geopandas.GeodataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool=False):
+    try:
+        e = _download_hydroframe_data(domain,dt_start,dt_end,overwrite)
+        if e is not None: return e
+    except Exception as e:
+        return e
 
 def _get_parflow_conus1_bbox(domain:geopandas.GeoDataFrame):
     latlon_tbounds = domain.to_crs(epsg=4326).total_bounds
@@ -37,7 +34,7 @@ def _get_parflow_conus1_bbox(domain:geopandas.GeoDataFrame):
     conus1grid_maxx, conus1grid_maxy = math.ceil(conus1grid_maxx),  math.ceil(conus1grid_maxy)
     return tuple([conus1grid_minx, conus1grid_miny, conus1grid_maxx, conus1grid_maxy])
 
-def _download_hydroframe_data(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime):
+def _download_hydroframe_data(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool=False):
     try:
         conus1_proj, _, conus1_transform, conus1_shape = _get_parflow_conus1_grid_info()
         grid_bounds = _get_parflow_conus1_bbox(domain)
@@ -60,7 +57,7 @@ def _download_hydroframe_data(domain:geopandas.GeoDataFrame,dt_start:datetime.da
         for i in range(hf_data.shape[0]):
             dt = dt_start + datetime.timedelta(days=i)
             fname = os.path.join(domain.iloc[0]['dirname_wtd_raw'],'wtd_'+dt.strftime('%Y%m%d')+'.tiff')
-            if not os.path.isfile(fname):
+            if not os.path.isfile(fname) or overwrite:
                 hf_conus1grid_temp[grid_bounds[1]:grid_bounds[3],
                                 grid_bounds[0]:grid_bounds[2]] = hf_data[i,:,:]
                 with rasterio.io.MemoryFile() as memfile:
@@ -89,38 +86,9 @@ def _download_hydroframe_data(domain:geopandas.GeoDataFrame,dt_start:datetime.da
                     with rasterio.open(fname,'w',**wtd_meta) as wtd_dataset:
                         wtd_dataset.write(wtd_data[0,:,:],1)
         del hf_data, hf_conus1grid_temp
-        return [None,None]
+        return None
     except Exception as e:
-        return [domain.iloc[0]['domain_id'],e]
-
-def _calc_avgwtd_grid(namelist:twtnamelist.Namelist):
-    """Calculate mean wtd"""
-    if namelist.options.verbose: print('calling _calc_avgwtd_grid')
-    if not os.path.isfile(namelist.fnames.domain_mask):
-        sys.exit(f'ERROR could not find {namelist.fnames.domain_mask}')
-    start_string = namelist.time.datetime_dim[0].strftime('%Y%m%d')
-    end_string   = namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d')
-    fname        = "".join(['mean_wtd_',start_string,'_to_',end_string,'.tiff'])
-    fname_output = os.path.join(namelist.dirnames.output_summary,fname)
-    if not os.path.isfile(fname_output) or namelist.options.overwrite_flag:
-        domain_mask  = rasterio.open(namelist.fnames.domain_mask,'r').read(1) 
-        sum = numpy.zeros(shape=domain_mask.shape,dtype=numpy.float64)
-        cnt = 0
-        for i in range(len(namelist.time.datetime_dim)):
-            idatetime = namelist.time.datetime_dim[i]
-            fname_wtd = os.path.join(namelist.dirnames.wtd_parflow_resampled,
-                                     f'wtd_{idatetime.strftime("%Y%m%d")}_{namelist.options.name_resample_method}.tiff')
-            if os.path.isfile(fname_wtd):
-                wtd_data = rasterio.open(fname_wtd,'r').read(1)
-                wtd_data = numpy.where(domain_mask==1,wtd_data,0.)
-                sum += wtd_data
-                cnt += 1
-            else:
-                sys.exit(f'ERROR could not find {fname_wtd}')
-        mean_wtd = sum / float(len(namelist.time.datetime_dim))
-        mean_wtd = numpy.where(domain_mask==1,mean_wtd,numpy.nan)
-        with rasterio.open(fname_output, "w", **rasterio.open(fname_wtd,'r').meta) as summary_dataset:
-            summary_dataset.write(mean_wtd,1)
+        return e
 
 def _get_latlon_parflow_grid(grid_minx,grid_miny,grid_maxx,grid_maxy):
     """Get latlon bbox from ParFlow CONUS1 grid xy bbox"""

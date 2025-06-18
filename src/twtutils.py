@@ -14,7 +14,7 @@ def _mask(fname:str, huc:geopandas.GeoDataFrame):
                             "transform" : masked_transform})
     return masked_array, masked_meta
 
-def pp_func(func,args:tuple,namelist:twtnamelist.Namelist,MAX_PP_TIME_LENGTH_SECONDS:int=900):
+def pp_func(func,args:tuple,namelist:twtnamelist.Namelist):
     with multiprocessing.Pool(processes=min(namelist.options.core_count, len(args))) as pool:
         if isinstance(args[0], list) or isinstance(args[0], tuple):
             _async_out = [pool.apply_async(func, arg) for arg in args]
@@ -22,7 +22,7 @@ def pp_func(func,args:tuple,namelist:twtnamelist.Namelist,MAX_PP_TIME_LENGTH_SEC
             _async_out = [pool.apply_async(func, (arg,)) for arg in args]
         for i in range(len(_async_out)):
             try: 
-                _async_out[i] = _async_out[i].get(timeout=MAX_PP_TIME_LENGTH_SECONDS)
+                _async_out[i] = _async_out[i].get()
             except Exception as e:
                 if isinstance(args[i], list) or isinstance(args[i], tuple):
                     _async_out[i] = [args[i][0].iloc[0]['domain_id'],e]

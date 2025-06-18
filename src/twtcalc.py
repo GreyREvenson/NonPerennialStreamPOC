@@ -4,13 +4,13 @@ import os,numpy,rasterio,twtnamelist,multiprocessing,geopandas,datetime,twtutils
 def calc_parflow_inundation(namelist:twtnamelist.Namelist):
     """Calculate inundation using ParFlow simulations"""
     if namelist.options.verbose: print('calling calc_parflow_inundation')
-    _calc_inundation_main(namelist)
+    #_calc_inundation_main(namelist)
     _calc_parflow_inundation_summary(namelist)
 
 def _calc_parflow_inundation_summary(namelist:twtnamelist.Namelist):
     """Calculate summary grids"""
     if namelist.options.verbose: print('calling _calc_parflow_inundation_summary')
-    _calc_summary_perc_inundated_main(namelist)
+    #_calc_summary_perc_inundated_main(namelist)
     _calc_strm_permanence_main(namelist)
 
 def _calc_parflow_inundation_time_i(wtd_mean,twi_local,twi_mean,f,domain_mask):
@@ -31,50 +31,61 @@ def _calc_parflow_inundation_time_i(wtd_mean,twi_local,twi_mean,f,domain_mask):
     return wtd_local
 
 def _calc_strm_permanence_main(namelist:twtnamelist.Namelist):
-    if namelist.options.verbose: print('calling _calc_strm_perenniality_main')
-    domain = geopandas.read_file(namelist.fnames.domain)
-    args = list()
-    for i,r in domain.iterrows():
-        tstr = f'{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}'
-        fname_p = os.path.join(r['dirname_wtd_output_summary'],f'perennial_strms_{tstr}.tiff')
-        fname_np = os.path.join(r['dirname_wtd_output_summary'],f'nonperennial_strms_{tstr}.tiff')
-        if not os.path.isfile(fname_p) or not os.path.isfile(fname_np) or namelist.options.overwrite_flag:
-            args.append([domain.loc[[i]],namelist.time.datetime_dim[0],namelist.time.datetime_dim[-1]])
-    if namelist.options.pp:
-        twtutils.pp_func(_calc_strm_permanence,args,namelist)
-    else:
-        for arg in args: _calc_strm_permanence(*arg)
-    for i,r in domain.iterrows():
-        tstr = f'{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}'
-        fname_p = os.path.join(r['dirname_wtd_output_summary'],f'perennial_strms_{tstr}.tiff')
-        if not os.path.isfile(fname_p):
-            print(f'ERROR _calc_strm_permanence_main missing {os.path.basename(fname_p)} for domain {r['domain_id']}')
-        fname_np = os.path.join(r['dirname_wtd_output_summary'],f'nonperennial_strms_{tstr}.tiff')
-        if not os.path.isfile(fname_np):
-            print(f'ERROR _calc_strm_permanence_main missing {os.path.basename(fname_p)} for domain {r['domain_id']}')
+    try:
+        if namelist.options.verbose: print('calling _calc_strm_perenniality_main')
+        domain = geopandas.read_file(namelist.fnames.domain)
+        tstr = f'{namelist.time.datetime_dim[0].strftime('%Y%m%d')}_to_{namelist.time.datetime_dim[-1].strftime('%Y%m%d')}'
+        args = list()
+        for i,r in domain.iterrows():
+            fname_p = os.path.join(r['dirname_wtd_output_summary'],f'perennial_strms_{tstr}.tiff')
+            fname_np = os.path.join(r['dirname_wtd_output_summary'],f'nonperennial_strms_{tstr}.tiff')
+            if not os.path.isfile(fname_p) or not os.path.isfile(fname_np) or namelist.options.overwrite_flag:
+                args.append([domain.loc[[i]],namelist.time.datetime_dim[0],namelist.time.datetime_dim[-1]])
+        if namelist.options.pp:
+            twtutils.pp_func(_calc_strm_permanence,args,namelist)
+        else:
+            for arg in args: _calc_strm_permanence(*arg)
+        for i,r in domain.iterrows():
+            fname_p = os.path.join(r['dirname_wtd_output_summary'],f'perennial_strms_{tstr}.tiff')
+            if not os.path.isfile(fname_p):
+                print(f'ERROR _calc_strm_permanence_main missing {os.path.basename(fname_p)} for domain {r['domain_id']}')
+            fname_np = os.path.join(r['dirname_wtd_output_summary'],f'nonperennial_strms_{tstr}.tiff')
+            if not os.path.isfile(fname_np):
+                print(f'ERROR _calc_strm_permanence_main missing {os.path.basename(fname_p)} for domain {r['domain_id']}')
+        return [None,None]
+    except Exception as e:
+        return [domain.iloc[0]['domain_id'], e]
 
 def _calc_strm_permanence(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime):
-    tstr = f'{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}'
-    fname_p  = os.path.join(domain.iloc[0]['dirname_wtd_output_summary'],f'perennial_strms_{tstr}.tiff')
-    fname_np = os.path.join(domain.iloc[0]['dirname_wtd_output_summary'],f'nonperennial_strms_{tstr}.tiff')
-    if not os.path.isfile(fname_p) or not os.path.isfile(fname_np) or overwrite_flag:
-        strms    = rasterio.open(domain.iloc[0]['fname_strm_mask'],'r').read(1).astype(numpy.int8)
-        fname_in = os.path.join(domain.iloc[0]['dirname_wtd_output_summary'],f'percent_inundated_grid_{tstr}.tiff')
-        with rasterio.open(fname_in,'r') as riods_piund:
-            perc_inund = riods_piund.read(1)
-            meta = riods_piund.meta.copy()  
-        strms_p = numpy.where(numpy.isclose(perc_inund,100.),1,0).astype(numpy.int8)
-        strms_p = numpy.where(strms==1,strms_p,0)
-        meta.update({'dtype':numpy.int8,
-                     'nodata':0})
-        with rasterio.open(fname_p, "w", **meta) as riods_out:
-            riods_out.write(strms_p,1)
-        strms_np = numpy.where((perc_inund>0)&(perc_inund<100),perc_inund,numpy.nan)
-        strms_np = numpy.where(strms==1,strms_np,numpy.nan)
-        meta.update({'dtype':numpy.float32,
-                     'nodata':numpy.nan})
-        with rasterio.open(fname_np, "w", **meta) as riods_out:
-            riods_out.write(strms_np,1)
+    try:
+        tstr = f'{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}'
+        fname_p  = os.path.join(domain.iloc[0]['dirname_wtd_output_summary'],f'perennial_strms_{tstr}.tiff')
+        fname_np = os.path.join(domain.iloc[0]['dirname_wtd_output_summary'],f'nonperennial_strms_{tstr}.tiff')
+        if not os.path.isfile(fname_p) or not os.path.isfile(fname_np) or overwrite_flag:
+            fname_in = os.path.join(domain.iloc[0]['dirname_wtd_output_summary'],f'percent_inundated_grid_{tstr}.tiff')
+            if os.path.isfile(fname_in) and os.path.isfile(domain.iloc[0]['fname_strm_mask']):
+                with rasterio.open(fname_in,'r') as riods_piund:
+                    perc_inund = riods_piund.read(1)
+                    meta = riods_piund.meta.copy()  
+                strms_p = numpy.where(numpy.isclose(perc_inund,100.),1,0).astype(numpy.int8)
+                strms   = rasterio.open(domain.iloc[0]['fname_strm_mask'],'r').read(1).astype(numpy.int8)
+                strms_p = numpy.where(strms==1,strms_p,0)
+                meta.update({'dtype':numpy.int8,
+                            'nodata':0})
+                with rasterio.open(fname_p, "w", **meta) as riods_out:
+                    riods_out.write(strms_p,1)
+                test = numpy.where((perc_inund>0)&(perc_inund<100),1,0)
+                strms_np = numpy.where((perc_inund>0)&(perc_inund<100),perc_inund,numpy.nan)
+                strms_np = numpy.where(strms==1,strms_np,numpy.nan)
+                meta.update({'dtype':numpy.float32,
+                            'nodata':numpy.nan})
+                with rasterio.open(fname_np, "w", **meta) as riods_out:
+                    riods_out.write(strms_np,1)
+            else:
+                return [domain.iloc[0]['domain_id'], f'ERROR _calc_strm_permanence missing percent inundation grid {fname_in}']
+        return [None, None]
+    except Exception as e:
+        return [domain.iloc[0]['domain_id'], e]
 
 def _calc_summary_perc_inundated_main(namelist:twtnamelist.Namelist):
     """Calculate summary grid of inundated area"""
