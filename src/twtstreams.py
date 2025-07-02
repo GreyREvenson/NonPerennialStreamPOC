@@ -2,21 +2,11 @@ import os,geopandas,pynhd,twtnamelist,multiprocessing,shapely,twtutils
 
 def set_streams_main(namelist:twtnamelist.Namelist):
     if namelist.options.verbose: print('calling set_streams_main')
-    domain = geopandas.read_file(namelist.fnames.domain)
+    domain     = geopandas.read_file(namelist.fnames.domain)
+    domain_ids = domain['domain_id'].tolist()
     args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
                     [namelist.options.overwrite]   * len(domain)))
-    if namelist.options.pp and len(args) > 1:
-        with multiprocessing.Pool(processes=min(namelist.options.core_count, len(args))) as pool:
-            _async_out = [pool.apply_async(_set_streams, arg) for arg in args]
-            for i in range(len(_async_out)):
-                try: 
-                    _async_out[i] = _async_out[i].get()
-                except Exception as e: 
-                    _async_out[i] = e
-    for i in range(len(_async_out)):
-        if _async_out[i] is not None: 
-            id = args[i][0].iloc[0]['domain_id']
-            print(f'ERROR _set_streams failed for domain {id} with error {_async_out[i]}')
+    twtutils.call_func(_set_streams,args,namelist)
 
 def _set_streams(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     try:

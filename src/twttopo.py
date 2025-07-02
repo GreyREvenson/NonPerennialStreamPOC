@@ -4,58 +4,50 @@ from scipy.ndimage import uniform_filter
 def calc_topo_main(namelist:twtnamelist.Namelist):
     if namelist.options.verbose: print('calling calc_topo')
     domain = geopandas.read_file(namelist.fnames.domain)
-    args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
-                    [namelist.fnames.dem_usr]      * len(domain),
-                    [namelist.options.facc_thresh] * len(domain),
-                    [namelist.options.overwrite]   * len(domain)))
-    if namelist.options.pp and len(args) > 1:
-        with multiprocessing.Pool(processes=min(namelist.options.core_count, len(args))) as pool:
-            _async_out = [pool.apply_async(_calc_topo, arg) for arg in args]
-            for i in range(len(_async_out)):
-                try: 
-                    _async_out[i] = _async_out[i].get()
-                except Exception as e: 
-                    _async_out[i] = e
-    for i in range(len(_async_out)):
-        if _async_out[i] is not None: 
-            id = args[i][0].iloc[0]['domain_id']
-            print(f'ERROR set_topo failed for domain {id} with error {_async_out[i]}')
+    args   = list(zip([domain.iloc[[i]]                      for i in range(len(domain))],
+                      [namelist.fnames.dem_user]             * len(domain),
+                      [namelist.options.facc_strm_threshold] * len(domain),
+                      [namelist.options.overwrite]           * len(domain)))
+    twtutils.call_func(_calc_topo,args,namelist)
 
-def _calc_topo(domain:geopandas.GeoDataFrame,fname_dem_usr:str,facc_thresh:float,overwrite:bool=False):
+def _calc_topo(domain:geopandas.GeoDataFrame,fname_dem_usr:str,facc_thresh_ncells:int,overwrite:bool=False):
     if os.path.isfile(fname_dem_usr):
-        e = _break_dem(domain,overwrite)
+        e = _break_dem(domain,fname_dem_usr,overwrite)
         if e is not None: return e
     else:
         e = _download_dem(domain,overwrite)
         if e is not None: return e
     e = _set_domain_mask(domain,overwrite)
     if e is not None: return e
-    e = _breach_dem(domain,ovwerwrite)
+    e = _breach_dem(domain,overwrite)
     if e is not None:
         e = _breach_dem_fill(domain,overwrite)
-        if e is None: return e
+        if e is not None: return e
     e = _calc_facc(domain,overwrite)
     if e is not None: return e
-    e = _calc_stream_mask(domain,facc_thresh,overwrite)
+    e = _calc_stream_mask(domain,facc_thresh_ncells,overwrite)
     if e is not None: return e
     e = _calc_slope(domain,overwrite)
     if e is not None: return e
     e = _calc_twi(domain,overwrite)
     if e is not None: return e
     e = _calc_mean_twi(domain,overwrite)
-    if e is not None: return e
-    
+    return e
+
 def _break_dem(domain:geopandas.GeoDataFrame,fname_dem_usr:str,overwrite:bool=False):
     try:
-        dem_out = domain.iloc[0]['fname_dem']
+        dem_out = domain.iloc[0]['dem.tiff']
         if not os.path.isfile(fname_dem_usr):
             return f'ERROR _break_dem could not find file {fname_dem_usr}'
         with rasterio.open(fname_dem_usr,'r') as riods_dem:
             domain = domain.to_crs('EPSG:5070')
             domain.geometry = domain.geometry.buffer(distance=1000)
             domain = domain.to_crs(riods_dem.crs)
-            dem_bbox = shapely.geometry_polygon.box(riods_dem.bounds)
-            if not dem_bbox.contains(domain):
+            dem_bbox = shapely.geometry.box(riods_dem.bounds.left,
+                                            riods_dem.bounds.bottom,
+                                            riods_dem.bounds.right,
+                                            riods_dem.bounds.top)
+            if not dem_bbox.contains(shapely.ops.unary_union(domain.iloc[0].geometry)):
                 return f'ERROR _break_dem domain is not covered by dem {fname_dem_usr}'
             if not os.path.isfile(dem_out) or overwrite:
                 masked_dem_array, masked_dem_transform = rasterio.mask.mask(dataset     = riods_dem, 
@@ -78,7 +70,7 @@ def _break_dem(domain:geopandas.GeoDataFrame,fname_dem_usr:str,overwrite:bool=Fa
 
 def _download_dem(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     try:
-        fname_dem = domain.iloc[0]['fname_dem']
+        fname_dem = domain.iloc[0]['dem.tiff']
         if not os.path.isfile(fname_dem) or overwrite:
             domain_buf  = domain.to_crs('EPSG:5070').buffer(distance=1000).to_crs(domain.crs)
             domain_geom = shapely.ops.unary_union(domain_buf.geometry)
@@ -102,8 +94,8 @@ def _download_dem(domain:geopandas.GeoDataFrame,overwrite:bool=False):
 
 def _set_domain_mask(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     try:
-        fname_dem = domain.iloc[0]['fname_dem']
-        fname_out = domain.iloc[0]['fname_domain_mask']
+        fname_dem = domain.iloc[0]['dem.tiff']
+        fname_out = domain.iloc[0]['domain_mask.tiff']
         if not os.path.isfile(fname_dem):
             return f'ERROR _set_domain_mask could not find file {fname_dem}'
         if not os.path.isfile(fname_out) or overwrite:
@@ -123,7 +115,7 @@ def _set_domain_mask(domain:geopandas.GeoDataFrame,overwrite:bool=False):
                                         "transform" : riods_dem.transform,
                                         "dtype"     : rasterio.uint8,
                                         "nodata"    : 0})
-                with rasterio.open(domain.iloc[0]['fname_domain_mask'], 'w', **domain_mask_meta) as dst:
+                with rasterio.open(fname_out, 'w', **domain_mask_meta) as dst:
                     dst.write(domain_mask,indexes=1)
         return None
     except Exception as e:
@@ -131,24 +123,24 @@ def _set_domain_mask(domain:geopandas.GeoDataFrame,overwrite:bool=False):
 
 def _breach_dem(domain:geopandas.GeoDataFrame,ovwerwrite:bool=False):
     try:
-        dem    = domain.iloc[0]['fname_dem']
-        output = domain.iloc[0]['fname_dem_breached']
+        dem    = domain.iloc[0]['dem.tiff']
+        output = domain.iloc[0]['dem_breached.tiff']
         if not os.path.isfile(dem):
             return f'ERROR _breach_dem could not find file {dem}'
         if not os.path.isfile(output) or ovwerwrite:
             wbt = whitebox.WhiteboxTools()
             wbt.breach_depressions_least_cost(dem    = dem,
-                                            output = output,
-                                            fill   = False,
-                                            dist   = 1000)
+                                              output = output,
+                                              fill   = False,
+                                              dist   = 1000)
         return None
     except Exception as e:
         return e
     
 def _breach_dem_fill(domain:geopandas.GeoDataFrame,ovwerwrite:bool=False):
     try:
-        dem    = domain.iloc[0]['fname_dem']
-        output = domain.iloc[0]['fname_dem_breached']
+        dem    = domain.iloc[0]['dem.tiff']
+        output = domain.iloc[0]['dem_breached.tiff']
         if not os.path.isfile(dem):
             return f'ERROR _breach_dem could not find file {dem}'
         if not os.path.isfile(output) or ovwerwrite:
@@ -161,55 +153,62 @@ def _breach_dem_fill(domain:geopandas.GeoDataFrame,ovwerwrite:bool=False):
     except Exception as e:
         return e
 
-def _calc_facc(domain:geopandas.GeoDataFrame,ovwerwrite:bool=False):
+def _calc_facc(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     try:
-        i      = domain.iloc[0]['fname_dem_breached']
-        output = domain.iloc[0]['fname_facc']
-        if not os.path.isfile(dem):
+        i             = domain.iloc[0]['dem_breached.tiff']
+        output_ncells = domain.iloc[0]['flow_acc_ncells.tiff']
+        output_sca    = domain.iloc[0]['flow_acc_sca.tiff']
+        if not os.path.isfile(i):
             return f'ERROR _calc_facc could not find file {i}'
-        if not os.path.isfile(output) or ovwerwrite:
+        if not os.path.isfile(output_ncells) or overwrite:
             wbt = whitebox.WhiteboxTools()
             wbt.d_inf_flow_accumulation(i        = i,
-                                        output   = output,
+                                        output   = output_ncells,
                                         out_type = 'cells',
+                                        log      = False)
+        if not os.path.isfile(output_sca) or overwrite:
+            wbt = whitebox.WhiteboxTools()
+            wbt.d_inf_flow_accumulation(i        = i,
+                                        output   = output_sca,
+                                        out_type = 'sca',
                                         log      = False)
         return None
     except Exception as e:
         return e
 
-def _calc_stream_mask(domain:geopandas.GeoDataFrame,facc_thresh:int=0.5,overwrite:bool=False):
+def _calc_stream_mask(domain:geopandas.GeoDataFrame,facc_thresh:int=10,overwrite:bool=False):
     try:
-        flow_accum = domain.iloc[0]['fname_facc']
-        output     = domain.iloc[0]['fname_strm_mask']
+        flow_accum = domain.iloc[0]['flow_acc_ncells.tiff']
+        output     = domain.iloc[0]['facc_strm_mask.tiff']
         if not os.path.isfile(flow_accum):
             return f'ERROR _calc_stream_mask could not find file {flow_accum}'
         if not os.path.isfile(output) or overwrite:
             wbt = whitebox.WhiteboxTools()
-            wbt.extract_streams(flow_accum      = domain.iloc[0]['fname_facc'],
-                                output          = domain.iloc[0]['fname_strm_mask'],
+            wbt.extract_streams(flow_accum      = flow_accum,
+                                output          = output,
                                 threshold       = facc_thresh,
                                 zero_background = True)
-            with rasterio.open(domain.iloc[0]['fname_facc'],'r') as riods_facc:
-                facc = riods_facc.read(1)
-                strm_mask = numpy.where(facc >= 0.1, 1, 0).astype(rasterio.uint8)
-                strm_mask_meta = riods_facc.meta.copy()
-                strm_mask_meta.update({'nodata':0,'dtype':rasterio.uint8})
-                with rasterio.open(domain.iloc[0]['fname_strm_mask'],'w',**strm_mask_meta) as riods_strm_mask:
-                    riods_strm_mask.write(strm_mask,1)
+            #with rasterio.open(flow_accum,'r') as riods_facc:
+            #    facc = riods_facc.read(1)
+            #    strm_mask = numpy.where(facc >= 0.1, 1, 0).astype(rasterio.uint8)
+            #    strm_mask_meta = riods_facc.meta.copy()
+            #    strm_mask_meta.update({'nodata':0,'dtype':rasterio.uint8})
+            #    with rasterio.open(domain.iloc[0]['fname_strm_mask'],'w',**strm_mask_meta) as riods_strm_mask:
+            #        riods_strm_mask.write(strm_mask,1)
         return None
     except Exception as e:
         return e
 
 def _calc_slope(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     try:
-        dem    = domain.iloc[0]['fname_dem_breached']
-        output = domain.iloc[0]['fname_slope']
+        dem    = domain.iloc[0]['dem_breached.tiff']
+        output = domain.iloc[0]['slope.tiff']
         if not os.path.isfile(dem):
             return f'ERROR _calc_slope could not find file {dem}'
         if not os.path.isfile(output) or overwrite:
             wbt = whitebox.WhiteboxTools()
-            wbt.slope(dem    = domain.iloc[0]['fname_dem_breached'],
-                      output = domain.iloc[0]['fname_slope'],
+            wbt.slope(dem    = dem,
+                      output = output,
                       units  = 'degrees')
         return None
     except Exception as e:
@@ -217,9 +216,9 @@ def _calc_slope(domain:geopandas.GeoDataFrame,overwrite:bool=False):
 
 def _calc_twi(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     try:    
-        sca    = domain.iloc[0]['fname_facc']
-        slope  = domain.iloc[0]['fname_slope']
-        output = domain.iloc[0]['fname_twi']
+        sca    = domain.iloc[0]['flow_acc_sca.tiff']
+        slope  = domain.iloc[0]['slope.tiff']
+        output = domain.iloc[0]['twi.tiff']
         if not os.path.isfile(sca):
             return f'ERROR _calc_twi could not find file {sca}'
         if not os.path.isfile(slope):
@@ -235,8 +234,8 @@ def _calc_twi(domain:geopandas.GeoDataFrame,overwrite:bool=False):
 
 def _calc_mean_twi(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     try:
-        fname_twi      = domain.iloc[0]['fname_twi']
-        fname_twi_mean = domain.iloc[0]['fname_twi_mean']
+        fname_twi      = domain.iloc[0]['twi.tiff']
+        fname_twi_mean = domain.iloc[0]['twi_mean.tiff']
         if not os.path.isfile(fname_twi): 
             return f'ERROR _calc_mean_twi could not find file {fname_twi}'
         if not os.path.isfile(fname_twi_mean) or overwrite:

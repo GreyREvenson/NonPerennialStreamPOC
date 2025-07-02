@@ -3,10 +3,10 @@ import os,pygeohydro,twtnamelist,geopandas,sys,shapely,rasterio
 def set_domain(namelist:twtnamelist.Namelist):
     """Set domain"""
     if namelist.options.verbose: print('calling set_domain')
-    _set_domain(namelist)
-    _set_domain_fnames(namelist)
+    _set_domain_boundary(namelist)
+    _set_subdomain_paths(namelist)
 
-def _set_domain(namelist:twtnamelist.Namelist):
+def _set_domain_boundary(namelist:twtnamelist.Namelist):
     """Set domain - TODO: change so that domain can be a non-huc area and subdomain units can be non-huc area"""
     if namelist.options.verbose: print('calling _set_domain_boundary')
     if not os.path.isfile(namelist.fnames.domain) or namelist.options.overwrite_flag:
@@ -32,44 +32,47 @@ def _set_domain(namelist:twtnamelist.Namelist):
             sys.exit('ERROR: currently, domain must be a HUC')
         domain.to_file(namelist.fnames.domain, driver='GPKG')
 
-def _set_domain_fnames(namelist:twtnamelist.Namelist):
-    if namelist.options.verbose: print('calling _set_domain_fnames')
-    domain   = geopandas.read_file(namelist.fnames.domain)
-    dtfnames = {'fname_domain'              : namelist.fnames.domain,
-                'fname_domain_mask'         : namelist.fnames.domain_mask,
-                'fname_dem'                 : namelist.fnames.dem,
-                'fname_dem_breached'        : namelist.fnames.dem_breached,
-                'fname_facc'                : namelist.fnames.flow_acc,
-                'fname_strm_mask'           : namelist.fnames.facc_strm_mask,
-                'fname_slope'               : namelist.fnames.slope,
-                'fname_twi'                 : namelist.fnames.twi,
-                'fname_twi_mean'            : namelist.fnames.twi_mean,
-                'fname_soil_texture'        : namelist.fnames.soil_texture,
-                'fname_soil_transmissivity' : namelist.fnames.soil_transmissivity,
-                'fname_nhd'                 : namelist.fnames.nhd}
-    dtdnames = {'dirname_wtd_raw'           : namelist.dirnames.wtd_parflow_raw,
-                'dirname_wtd_reprj_resmple' : namelist.dirnames.wtd_parflow_resampled,
-                'dirname_wtd_output_raw'    : namelist.dirnames.output_raw,
-                'dirname_wtd_output_summary': namelist.dirnames.output_summary}
+def _set_subdomain_paths(namelist:twtnamelist.Namelist):
+    if namelist.options.verbose: print('calling _set_subdomain_paths')
+    domain = geopandas.read_file(namelist.fnames.domain)
+    fnames =        [namelist.fnames.domain,
+                     namelist.fnames.domain_mask,
+                     namelist.fnames.dem,
+                     namelist.fnames.dem_breached,
+                     namelist.fnames.flow_acc_sca,
+                     namelist.fnames.flow_acc_ncells,
+                     namelist.fnames.facc_strm_mask,
+                     namelist.fnames.slope,
+                     namelist.fnames.twi,
+                     namelist.fnames.twi_mean,
+                     namelist.fnames.soil_texture,
+                     namelist.fnames.soil_transmissivity,
+                     namelist.fnames.nhd]
+    input_dnames =  [namelist.dirnames.wtd_raw,
+                     namelist.dirnames.wtd_resampled]
+    output_dnames = [namelist.dirnames.output_raw,
+                     namelist.dirnames.output_summary]
     if len(domain) == 1:
-        for fname in dtfnames:   domain[fname]   = dtfnames[fname]
-        for dirname in dtdnames: domain[dirname] = dtdnames[dirname]
+        for fname in fnames: domain[os.path.basename(fname)] = fname
+        for dname in dnames: domain[os.path.basename(fname)] = dname
     else:
-        for fname in dtfnames:
-            if fname not in domain.columns:
-                domain[fname] = domain['domain_id'].apply(lambda domain_id: os.path.join(os.path.dirname(dtfnames[fname]), 
-                                                                                         '_subdomains',
-                                                                                         str(domain_id),
-                                                                                         os.path.basename(dtfnames[fname])))
-            for _fname in domain[fname].tolist():
-                os.makedirs(os.path.dirname(_fname), exist_ok=True)
-        for dname in dtdnames:
-            if dname not in domain.columns:
-                domain[dname] = domain['domain_id'].apply(lambda domain_id: os.path.join(dtdnames[dname], 
-                                                                                        '_subdomains',
-                                                                                        str(domain_id)))
-            for _dname in domain[dname].tolist():
-                os.makedirs(_dname, exist_ok=True)
+        for fname in fnames:
+            domain[os.path.basename(fname)] = domain['domain_id'].apply(lambda domain_id: os.path.join(namelist.dirnames.input_subdomain,
+                                                                                                       str(domain_id),
+                                                                                                       os.path.basename(fname)))
+        for fname in fnames:
+            for fname_subdomain in domain[os.path.basename(fname)].tolist():
+                os.makedirs(os.path.dirname(fname_subdomain), exist_ok=True)
+        for dname in input_dnames:
+            domain[os.path.basename(dname)] = domain['domain_id'].apply(lambda domain_id: os.path.join(namelist.dirnames.input_subdomain, 
+                                                                                                       str(domain_id),
+                                                                                                       os.path.basename(dname)))
+        for dname in output_dnames:
+            domain[os.path.basename(dname)] = domain['domain_id'].apply(lambda domain_id: os.path.join(namelist.dirnames.output_subdomain, 
+                                                                                                       str(domain_id),
+                                                                                                       os.path.basename(dname)))
+        for dname in domain[os.path.basename(dname)].tolist():
+            os.makedirs(dname, exist_ok=True)
     if os.path.isfile(namelist.fnames.dem_user):
         domain = domain.to_crs(rasterio.open(namelist.fnames.dem_user,'r').crs.to_string())
     else:

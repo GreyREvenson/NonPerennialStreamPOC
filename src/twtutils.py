@@ -14,24 +14,32 @@ def _mask(fname:str, huc:geopandas.GeoDataFrame):
                             "transform" : masked_transform})
     return masked_array, masked_meta
 
-def pp_func(func,args:tuple,namelist:twtnamelist.Namelist):
-    with multiprocessing.Pool(processes=min(namelist.options.core_count, len(args))) as pool:
-        if isinstance(args[0], list) or isinstance(args[0], tuple):
-            _async_out = [pool.apply_async(func, arg) for arg in args]
-        else:
-            _async_out = [pool.apply_async(func, (arg,)) for arg in args]
-        for i in range(len(_async_out)):
-            try: 
-                _async_out[i] = _async_out[i].get()
-            except Exception as e:
-                if isinstance(args[i], list) or isinstance(args[i], tuple):
-                    _async_out[i] = [args[i][0].iloc[0]['domain_id'],e]
-                else:
-                    _async_out[i] = [args[i].iloc[0]['domain_id'],e]
-        for _out in _async_out:
-            if _out[0] is not None: 
-                print(f'ERROR {func.__name__} failed for domain {str(_out[0])} with error {str(_out[1])}')
-
+def call_func(func,args:tuple,namelist:twtnamelist.Namelist):
+    """function wrapper"""
+    if isinstance(args[0], list) or isinstance(args[0], tuple):
+        domain_ids = [args[i][0].iloc[0]['domain_id'] for i in range(len(args))]
+    else:
+        domain_ids = [args[i].iloc[0]['domain_id'] for i in range(len(args))]
+    if namelist.options.pp and len(args) > 1:
+        with multiprocessing.Pool(processes=min(namelist.options.core_count, len(args))) as pool:
+            if isinstance(args[0], list) or isinstance(args[0], tuple):
+                results  = [pool.apply_async(func, arg) for arg in args]
+            else:
+                results  = [pool.apply_async(func, (arg,)) for arg in args]
+            for i in range(len(results)):
+                try: 
+                    results[i] = results[i].get()
+                except Exception as e:
+                    results[i] = e
+    else:
+        results = [func(*args[i]) for i in range(len(args))]
+    errmsgs = str()
+    for i in range(len(results)):
+        if results[i] is not None: 
+            errmsgs += f'ERROR {func.__name__} failed for domain {domain_ids[i]} with error\n{results[i]}\n'
+    if len(errmsgs) > 0:
+        sys.exit(errmsgs)
+        
 def merge_grids(fname_col:str, fname_out:str, namelist:twtnamelist.Namelist):
     domain = geopandas.read_file(namelist.fnames.domain)
     if fname_col not in domain.columns:

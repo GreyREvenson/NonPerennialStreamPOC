@@ -1,25 +1,15 @@
 import os,sys,math,datetime,geopandas,hf_hydrodata,rasterio,numpy,twtnamelist,multiprocessing,shapely,twtutils
 
 def set_wtd_main(namelist:twtnamelist.Namelist):
-    """Get water table depth data for domain"""
     if namelist.options.verbose: print('calling set_wtd_main')
     domain = geopandas.read_file(namelist.fnames.domain)
     args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
-                    [namelist.options.overwrite]   * len(domain)))
-    if namelist.options.pp and len(args) > 1:
-        with multiprocessing.Pool(processes=min(namelist.options.core_count, len(args))) as pool:
-            _async_out = [pool.apply_async(_set_wtd, arg) for arg in args]
-            for i in range(len(_async_out)):
-                try: 
-                    _async_out[i] = _async_out[i].get()
-                except Exception as e: 
-                    _async_out[i] = e
-    for i in range(len(_async_out)):
-        if _async_out[i] is not None: 
-            id = args[i][0].iloc[0]['domain_id']
-            print(f'ERROR _set_wtd failed for domain {id} with error {_async_out[i]}')
+                    [namelist.time.datetime_dim[0]]  * len(domain),
+                    [namelist.time.datetime_dim[-1]] * len(domain)
+                    [namelist.options.overwrite]     * len(domain)))
+    twtutils.call_func(_set_wtd,args,namelist)
 
-def _set_wtd(domain:geopandas.GeodataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool=False):
+def _set_wtd(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool=False):
     try:
         e = _download_hydroframe_data(domain,dt_start,dt_end,overwrite)
         if e is not None: return e

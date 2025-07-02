@@ -6,24 +6,13 @@ def set_soils_main(namelist:twtnamelist.Namelist):
     domain = geopandas.read_file(namelist.fnames.domain)
     args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
                     [namelist.options.overwrite] * len(domain)))
-    if namelist.options.pp and len(args) > 1:
-        with multiprocessing.Pool(processes=min(namelist.options.core_count, len(args))) as pool:
-            _async_out = [pool.apply_async(_set_soils, arg) for arg in args]
-            for i in range(len(_async_out)):
-                try: 
-                    _async_out[i] = _async_out[i].get()
-                except Exception as e: 
-                    _async_out[i] = e
-    for i in range(len(_async_out)):
-        if _async_out[i] is not None: 
-            id = args[i][0].iloc[0]['domain_id']
-            print(f'ERROR _set_soils failed for domain {id} with error {_async_out[i]}')
+    twtutils.call_func(_set_soils,args,namelist)
 
-def _set_soils(domain:geopandas.GeoDataframe,overwrite:bool=False):
+def _set_soils(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     e = _set_soil_texture(domain,overwrite)
     if e is not None: return e
     e = _set_soil_transmissivity(domain,overwrite)
-    if e is not None: return e
+    return e
 
 def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     try:
@@ -88,19 +77,19 @@ def _set_soil_transmissivity(domain:geopandas.GeoDataFrame,overwrite:bool=False)
             soils_shapes = ((geom,value) for geom, value in zip(soil_texture.geometry, soil_texture['f']))
             dem_array = dem.read(1)
             transm_data = rasterio.features.rasterize(shapes        = soils_shapes,
-                                                    out_shape     = dem_array.shape,
-                                                    transform     = dem.transform,
-                                                    fill          = numpy.nan,
-                                                    all_touched   = True,
-                                                    dtype         = rasterio.float32,
-                                                    default_value = numpy.nan)
+                                                      out_shape     = dem_array.shape,
+                                                      transform     = dem.transform,
+                                                      fill          = numpy.nan,
+                                                      all_touched   = True,
+                                                      dtype         = rasterio.float32,
+                                                      default_value = numpy.nan)
             meta = dem.meta.copy()
             meta.update({"driver"    : "GTiff",
-                        "height"    : dem_array.shape[0],
-                        "width"     : dem_array.shape[1],
-                        "transform" : dem.transform,
-                        "dtype"     : rasterio.float32,
-                        "nodata"    : numpy.nan})
+                         "height"    : dem_array.shape[0],
+                         "width"     : dem_array.shape[1],
+                         "transform" : dem.transform,
+                         "dtype"     : rasterio.float32,
+                         "nodata"    : numpy.nan})
             with rasterio.open(domain.iloc[0]['fname_soil_transmissivity'], 'w', **meta) as dst:
                 dst.write(transm_data,indexes=1)
         return None
