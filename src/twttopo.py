@@ -100,14 +100,14 @@ def _set_domain_mask(domain:geopandas.GeoDataFrame,overwrite:bool=False):
             return f'ERROR _set_domain_mask could not find file {fname_dem}'
         if not os.path.isfile(fname_out) or overwrite:
             with rasterio.open(fname_dem,'r') as riods_dem:
-                shape = domain.to_crs(riods_dem.crs).iloc[0]['geometry']
-                domain_mask = rasterio.features.rasterize(shapes        = shape,
-                                                        out_shape     = riods_dem.shape,
-                                                        transform     = riods_dem.transform,
-                                                        fill          = 0,
-                                                        all_touched   = True,
-                                                        dtype         = rasterio.uint8,
-                                                        default_value = 1)
+                domain_geom = shapely.ops.unary_union(domain.to_crs(riods_dem.crs).iloc[0].geometry)
+                domain_mask = rasterio.features.rasterize(shapes        = [domain_geom],
+                                                          out_shape     = riods_dem.shape,
+                                                          transform     = riods_dem.transform,
+                                                          fill          = 0,
+                                                          all_touched   = True,
+                                                          dtype         = rasterio.uint8,
+                                                          default_value = 1)
                 domain_mask_meta = riods_dem.meta.copy()
                 domain_mask_meta.update({"driver"    : "GTiff",
                                         "height"    : riods_dem.shape[0],

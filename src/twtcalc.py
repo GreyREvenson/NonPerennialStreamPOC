@@ -25,50 +25,60 @@ def _calc_inundation_main(namelist:twtnamelist.Namelist):
 
 def _calc_inundation(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,write_wtd_mean_flag:bool=False,overwrite:bool=False):
     try:
-        twi_local   = rasterio.open(domain.iloc[0]['fname_twi'],'r').read(1)
-        twi_mean    = rasterio.open(domain.iloc[0]['fname_twi_mean'],'r').read(1)
-        trans_decay = rasterio.open(domain.iloc[0]['fname_soil_transmissivity'],'r').read(1)
-        domain_mask = rasterio.open(domain.iloc[0]['fname_domain_mask'],'r').read(1)
-        with rasterio.open(domain.iloc[0]['fname_dem'],'r') as riods_dem:
-            _dst_crs    = riods_dem.crs
-            _dst_shape  = riods_dem.shape
-            _dst_meta   = riods_dem.meta.copy()
-            _dst_trans  = riods_dem.transform
+        calc_flag = False
         idt = dt_start
         while idt <= dt_end:
-            dt_str = idt.strftime('%Y%m%d')
-            fname_wtd_mean_raw = os.path.join(domain.iloc[0]['dirname_wtd_raw'],f'wtd_{dt_str}.tiff')
-            fname_inund        = os.path.join(domain.iloc[0]['dirname_wtd_output_raw'],f'inundation_{dt_str}.tiff')
-            if not os.path.isfile(fname_wtd_mean_raw):
-                return f'ERROR could not find {fname_wtd_mean_raw}'
+            dt_str      = idt.strftime('%Y%m%d')
+            fname_inund = os.path.join(domain.iloc[0]['output_raw'],f'inundation_{dt_str}.tiff')
             if not os.path.isfile(fname_inund) or overwrite:
-                with rasterio.open(fname_wtd_mean_raw,'r') as riods_wtd_mean_raw:
-                    wtd_mean, wtd_mean_trans = rasterio.warp.reproject(source        = riods_wtd_mean_raw.read(1),
-                                                                       destination   = numpy.empty(shape=_dst_shape,dtype=numpy.float32),
-                                                                       src_transform = riods_wtd_mean_raw.transform,
-                                                                       src_crs       = riods_wtd_mean_raw.crs,
-                                                                       dst_transform = _dst_trans,
-                                                                       dst_crs       = _dst_crs,
-                                                                       resampling    = rasterio.enums.Resampling.bilinear)
-                    inun_local = _calc_inundation_time_i(wtd_mean    = wtd_mean,
-                                                         twi_local   = twi_local,
-                                                         twi_mean    = twi_mean,
-                                                         f           = trans_decay,
-                                                         domain_mask = domain_mask)
-                    inun_local = numpy.where(inun_local==1,1,0).astype(numpy.int8)
-                    inun_local_meta = _dst_meta.copy()
-                    inun_local_meta.update({'transform' : wtd_mean_trans,
-                                            'dtype'     : rasterio.int8,
-                                            'nodata'    : 0})
-                    with rasterio.open(fname_inund,'w',**inun_local_meta) as riods_wtd_local:
-                        riods_wtd_local.write(inun_local,1)
-                    if write_wtd_mean_flag:
-                        dname = domain.iloc[0]['dirname_wtd_reprj_resmple']
-                        fname_wtd_mean_warped = os.path.join(dname,f'wtd_{dt_str}.tiff')
-                        if not os.path.isfile(fname_wtd_mean_warped) or overwrite:
-                            with rasterio.open(fname_wtd_mean_warped,'w',**_dst_meta) as riods_wtd_mean:
-                                riods_wtd_mean.write(wtd_mean,1)
+                calc_flag = True
+                break
             idt += datetime.timedelta(days=1)
+        if calc_flag:
+            twi_local   = rasterio.open(domain.iloc[0]['twi.tiff'],'r').read(1)
+            twi_mean    = rasterio.open(domain.iloc[0]['twi_mean.tiff'],'r').read(1)
+            trans_decay = rasterio.open(domain.iloc[0]['soil_transmissivity.tiff'],'r').read(1)
+            domain_mask = rasterio.open(domain.iloc[0]['domain_mask.tiff'],'r').read(1)
+            with rasterio.open(domain.iloc[0]['dem.tiff'],'r') as riods_dem:
+                _dst_crs    = riods_dem.crs
+                _dst_shape  = riods_dem.shape
+                _dst_meta   = riods_dem.meta.copy()
+                _dst_trans  = riods_dem.transform
+            idt = dt_start
+            while idt <= dt_end:
+                dt_str = idt.strftime('%Y%m%d')
+                fname_wtd_mean_raw = os.path.join(domain.iloc[0]['wtd_raw'],f'wtd_{dt_str}.tiff')
+                fname_inund        = os.path.join(domain.iloc[0]['output_raw'],f'inundation_{dt_str}.tiff')
+                if not os.path.isfile(fname_wtd_mean_raw):
+                    raise Exception(f'ERROR could not find {fname_wtd_mean_raw}')
+                if not os.path.isfile(fname_inund) or overwrite:
+                    with rasterio.open(fname_wtd_mean_raw,'r') as riods_wtd_mean_raw:
+                        wtd_mean, wtd_mean_trans = rasterio.warp.reproject(source        = riods_wtd_mean_raw.read(1),
+                                                                        destination   = numpy.empty(shape=_dst_shape,dtype=numpy.float32),
+                                                                        src_transform = riods_wtd_mean_raw.transform,
+                                                                        src_crs       = riods_wtd_mean_raw.crs,
+                                                                        dst_transform = _dst_trans,
+                                                                        dst_crs       = _dst_crs,
+                                                                        resampling    = rasterio.enums.Resampling.bilinear)
+                        inun_local = _calc_inundation_time_i(wtd_mean    = wtd_mean,
+                                                            twi_local   = twi_local,
+                                                            twi_mean    = twi_mean,
+                                                            f           = trans_decay,
+                                                            domain_mask = domain_mask)
+                        inun_local = numpy.where(inun_local==1,1,0).astype(numpy.int8)
+                        inun_local_meta = _dst_meta.copy()
+                        inun_local_meta.update({'transform' : wtd_mean_trans,
+                                                'dtype'     : rasterio.int8,
+                                                'nodata'    : 0})
+                        with rasterio.open(fname_inund,'w',**inun_local_meta) as riods_wtd_local:
+                            riods_wtd_local.write(inun_local,1)
+                        if write_wtd_mean_flag:
+                            dname = domain.iloc[0]['wtd_resampled']
+                            fname_wtd_mean_warped = os.path.join(dname,f'wtd_{dt_str}.tiff')
+                            if not os.path.isfile(fname_wtd_mean_warped) or overwrite:
+                                with rasterio.open(fname_wtd_mean_warped,'w',**_dst_meta) as riods_wtd_mean:
+                                    riods_wtd_mean.write(wtd_mean,1)
+                idt += datetime.timedelta(days=1)
         return None
     except Exception as e:
         return e
@@ -102,22 +112,22 @@ def _calc_strm_permanence_main(namelist:twtnamelist.Namelist):
 def _calc_strm_permanence(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool=False):
     try:
         tstr     = f'{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}'
-        fname_p  = os.path.join(domain.iloc[0]['dirname_wtd_output_summary'],f'perennial_strms_{tstr}.tiff')
-        fname_np = os.path.join(domain.iloc[0]['dirname_wtd_output_summary'],f'nonperennial_strms_{tstr}.tiff')
-        fname_in = os.path.join(domain.iloc[0]['dirname_wtd_output_summary'],f'percent_inundated_grid_{tstr}.tiff')
+        fname_p  = os.path.join(domain.iloc[0]['output_summary'],f'perennial_strms_{tstr}.tiff')
+        fname_np = os.path.join(domain.iloc[0]['output_summary'],f'nonperennial_strms_{tstr}.tiff')
+        fname_in = os.path.join(domain.iloc[0]['output_summary'],f'percent_inundated_grid_{tstr}.tiff')
         if not os.path.isfile(fname_in):
-            return f'ERROR could not find percent inundation grid {fname_in}'
-        if not os.path.isfile(domain.iloc[0]['fname_strm_mask']):
-            return f'ERROR could not find stream mask grid {domain.iloc[0]['fname_strm_mask']}'
+            raise Exception(f'ERROR could not find percent inundation grid {fname_in}')
+        if not os.path.isfile(domain.iloc[0]['facc_strm_mask.tiff']):
+            raise Exception(f'ERROR could not find stream mask grid {domain.iloc[0]['facc_strm_mask.tiff']}')
         if not os.path.isfile(fname_p) or not os.path.isfile(fname_np) or overwrite:
             with rasterio.open(fname_in,'r') as riods_piund:
                 perc_inund = riods_piund.read(1)
                 meta = riods_piund.meta.copy()  
             strms_p = numpy.where(numpy.isclose(perc_inund,100.),1,0).astype(numpy.int8)
-            strms   = rasterio.open(domain.iloc[0]['fname_strm_mask'],'r').read(1).astype(numpy.int8)
+            strms   = rasterio.open(domain.iloc[0]['facc_strm_mask.tiff'],'r').read(1).astype(numpy.int8)
             strms_p = numpy.where(strms==1,strms_p,0)
             meta.update({'dtype':numpy.int8,
-                        'nodata':0})
+                         'nodata':0})
             with rasterio.open(fname_p, "w", **meta) as riods_out:
                 riods_out.write(strms_p,1)
             test = numpy.where((perc_inund>0)&(perc_inund<100),1,0)
@@ -142,15 +152,15 @@ def _calc_summary_perc_inundated_main(namelist:twtnamelist.Namelist):
     twtutils.call_func(_calc_summary_perc_inundated,args,namelist)
 
 def _calc_summary_perc_inundated(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool=False):
-    domain_mask = rasterio.open(domain.iloc[0]['fname_domain_mask'],'r').read(1)
-    fname_output = os.path.join(domain.iloc[0]['dirname_wtd_output_summary'],
+    domain_mask = rasterio.open(domain.iloc[0]['domain_mask.tiff'],'r').read(1)
+    fname_output = os.path.join(domain.iloc[0]['output_summary'],
                                 f'percent_inundated_grid_{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}.tiff')
     if not os.path.isfile(fname_output) or overwrite:
         sumgrid = numpy.zeros(shape=domain_mask.shape,dtype=numpy.int32)
         idt     = dt_start
         while idt < dt_end:
             dt_str          = idt.strftime('%Y%m%d')
-            fname_inund_dti = os.path.join(domain.iloc[0]['dirname_wtd_output_raw'],
+            fname_inund_dti = os.path.join(domain.iloc[0]['output_raw'],
                                            f'inundation_{dt_str}.tiff')
             inun_dti        = rasterio.open(fname_inund_dti,'r').read(1)
             sumgrid        += inun_dti

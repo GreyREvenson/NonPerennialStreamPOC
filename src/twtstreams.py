@@ -10,7 +10,7 @@ def set_streams_main(namelist:twtnamelist.Namelist):
 
 def _set_streams(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     try:
-        fname_out = domain.iloc[0]['fname_nhd']
+        fname_out = domain.iloc[0]['nhd_hr.gpkg']
         if not os.path.isfile(fname_out) or overwrite:
             geom = shapely.ops.unary_union(domain['geometry'].to_list())
             nhd = pynhd.NHDPlusHR("flowline").bygeom(geom   =domain.total_bounds,

@@ -36,9 +36,9 @@ def call_func(func,args:tuple,namelist:twtnamelist.Namelist):
     errmsgs = str()
     for i in range(len(results)):
         if results[i] is not None: 
-            errmsgs += f'ERROR {func.__name__} failed for domain {domain_ids[i]} with error\n{results[i]}\n'
+            errmsgs += f'WARNING {func.__name__} failed for domain {domain_ids[i]} with message:\n{results[i]}\n\n'
     if len(errmsgs) > 0:
-        sys.exit(errmsgs)
+        print(errmsgs)
         
 def merge_grids(fname_col:str, fname_out:str, namelist:twtnamelist.Namelist):
     domain = geopandas.read_file(namelist.fnames.domain)

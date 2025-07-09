@@ -9,7 +9,7 @@ def set_domain(namelist:twtnamelist.Namelist):
 def _set_domain_boundary(namelist:twtnamelist.Namelist):
     """Set domain - TODO: change so that domain can be a non-huc area and subdomain units can be non-huc area"""
     if namelist.options.verbose: print('calling _set_domain_boundary')
-    if not os.path.isfile(namelist.fnames.domain) or namelist.options.overwrite_flag:
+    if not os.path.isfile(namelist.fnames.domain) or namelist.options.overwrite:
         name_domain = namelist.options.name_domain
         if isinstance(name_domain, str) and len(name_domain) in (2,4,6,8,10,12,14,16):
             # domain is a huc
@@ -71,8 +71,9 @@ def _set_subdomain_paths(namelist:twtnamelist.Namelist):
             domain[os.path.basename(dname)] = domain['domain_id'].apply(lambda domain_id: os.path.join(namelist.dirnames.output_subdomain, 
                                                                                                        str(domain_id),
                                                                                                        os.path.basename(dname)))
-        for dname in domain[os.path.basename(dname)].tolist():
-            os.makedirs(dname, exist_ok=True)
+        for dname in output_dnames:
+            for idname in domain[os.path.basename(dname)].tolist():
+                os.makedirs(idname, exist_ok=True)
     if os.path.isfile(namelist.fnames.dem_user):
         domain = domain.to_crs(rasterio.open(namelist.fnames.dem_user,'r').crs.to_string())
     else:
