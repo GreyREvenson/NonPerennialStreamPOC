@@ -7,36 +7,38 @@ def calc_topo_main(namelist:twtnamelist.Namelist):
     args   = list(zip([domain.iloc[[i]]                      for i in range(len(domain))],
                       [namelist.fnames.dem_user]             * len(domain),
                       [namelist.options.facc_strm_threshold] * len(domain),
-                      [namelist.options.overwrite]           * len(domain)))
+                      [namelist.options.overwrite]           * len(domain),
+                      [namelist.options.verbose]             * len(domain)))
     twtutils.call_func(_calc_topo,args,namelist)
 
-def _calc_topo(domain:geopandas.GeoDataFrame,fname_dem_usr:str,facc_thresh_ncells:int,overwrite:bool=False):
+def _calc_topo(domain:geopandas.GeoDataFrame,fname_dem_usr:str,facc_thresh_ncells:int,overwrite:bool,verbose:bool):
     if os.path.isfile(fname_dem_usr):
-        e = _break_dem(domain,fname_dem_usr,overwrite)
+        e = _break_dem(domain,fname_dem_usr,overwrite,verbose)
         if e is not None: return e
     else:
-        e = _download_dem(domain,overwrite)
+        e = _download_dem(domain,overwrite,verbose)
         if e is not None: return e
-    e = _set_domain_mask(domain,overwrite)
+    e = _set_domain_mask(domain,overwrite,verbose)
     if e is not None: return e
-    e = _breach_dem(domain,overwrite)
+    e = _breach_dem(domain,overwrite,verbose)
     if e is not None:
-        e = _breach_dem_fill(domain,overwrite)
+        e = _breach_dem_fill(domain,overwrite,verbose)
         if e is not None: return e
-    e = _calc_facc(domain,overwrite)
+    e = _calc_facc(domain,overwrite,verbose)
     if e is not None: return e
-    e = _calc_stream_mask(domain,facc_thresh_ncells,overwrite)
+    e = _calc_stream_mask(domain,overwrite,verbose,facc_thresh_ncells)
     if e is not None: return e
-    e = _calc_slope(domain,overwrite)
+    e = _calc_slope(domain,overwrite,verbose)
     if e is not None: return e
-    e = _calc_twi(domain,overwrite)
+    e = _calc_twi(domain,overwrite,verbose)
     if e is not None: return e
-    e = _calc_mean_twi(domain,overwrite)
+    e = _calc_mean_twi(domain,overwrite,verbose)
     return e
 
-def _break_dem(domain:geopandas.GeoDataFrame,fname_dem_usr:str,overwrite:bool=False):
+def _break_dem(domain:geopandas.GeoDataFrame,fname_dem_usr:str,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _break_dem for domain {domain.iloc[0]['domain_id']}')
     try:
-        dem_out = domain.iloc[0]['dem.tiff']
+        fname_dem = os.path.join(domain.iloc[0]['input'],'dem.tiff')
         if not os.path.isfile(fname_dem_usr):
             return f'ERROR _break_dem could not find file {fname_dem_usr}'
         with rasterio.open(fname_dem_usr,'r') as riods_dem:
@@ -49,7 +51,7 @@ def _break_dem(domain:geopandas.GeoDataFrame,fname_dem_usr:str,overwrite:bool=Fa
                                             riods_dem.bounds.top)
             if not dem_bbox.contains(shapely.ops.unary_union(domain.iloc[0].geometry)):
                 return f'ERROR _break_dem domain is not covered by dem {fname_dem_usr}'
-            if not os.path.isfile(dem_out) or overwrite:
+            if not os.path.isfile(fname_dem) or overwrite:
                 masked_dem_array, masked_dem_transform = rasterio.mask.mask(dataset     = riods_dem, 
                                                                             shapes      = [shapely.ops.unary_union(domain.iloc[0].geometry)], 
                                                                             crop        = True, 
@@ -62,40 +64,44 @@ def _break_dem(domain:geopandas.GeoDataFrame,fname_dem_usr:str,overwrite:bool=Fa
                                         "transform" : masked_dem_transform,
                                         "nodata"    : numpy.nan,
                                         "dtype"     : numpy.float32})
-                with rasterio.open(dem_out,'w',**masked_dem_meta) as riods_masked_dem:
+                with rasterio.open(fname_dem,'w',**masked_dem_meta) as riods_masked_dem:
                     riods_masked_dem.write(masked_dem_array[0],1)
         return None
     except Exception as e:
         return e
 
-def _download_dem(domain:geopandas.GeoDataFrame,overwrite:bool=False):
+def _download_dem(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _download_dem for domain {domain.iloc[0]['domain_id']}')
     try:
-        fname_dem = domain.iloc[0]['dem.tiff']
+        fname_dem = os.path.join(domain.iloc[0]['input'],'dem.tiff')
         if not os.path.isfile(fname_dem) or overwrite:
             domain_buf  = domain.to_crs('EPSG:5070').buffer(distance=1000).to_crs(domain.crs)
             domain_geom = shapely.ops.unary_union(domain_buf.geometry)
             avail       = py3dep.check_3dep_availability(bbox=tuple(domain_buf.total_bounds),
-                                                        crs=domain_buf.crs)
-            if   '10m' in avail and avail['10m']:
-                rez = 10
-            elif '30m' in avail and avail['30m']:
-                rez = 30
-            elif '60m' in avail and avail['60m']:
-                rez = 60
-            else:
+                                                         crs=domain_buf.crs)
+            vals = list()
+            for k in avail.keys():
+                try:    vals.append(int(k.replace('m','')))
+                except: pass
+            if len(vals) == 0:
                 sys.exit('ERROR _set_dem could not find dem resolution via py3dep')
+            
+            rez = min(vals)
+            if verbose:
+                print(f'INFO _download_dem downloading 3dep dem with resolution {rez} m for domain {domain.iloc[0]['domain_id']}')
             dem = py3dep.get_dem(geometry   = domain_geom,
-                                resolution = rez,
-                                crs        = domain_buf.crs)
+                                 resolution = rez,
+                                 crs        = domain_buf.crs)
             dem.rio.to_raster(fname_dem)
         return None
     except Exception as e:
         return e
 
-def _set_domain_mask(domain:geopandas.GeoDataFrame,overwrite:bool=False):
+def _set_domain_mask(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _set_domain_mask for domain {domain.iloc[0]['domain_id']}')
     try:
-        fname_dem = domain.iloc[0]['dem.tiff']
-        fname_out = domain.iloc[0]['domain_mask.tiff']
+        fname_dem = os.path.join(domain.iloc[0]['input'],'dem.tiff')
+        fname_out = os.path.join(domain.iloc[0]['input'],'domain_mask.tiff')
         if not os.path.isfile(fname_dem):
             return f'ERROR _set_domain_mask could not find file {fname_dem}'
         if not os.path.isfile(fname_out) or overwrite:
@@ -121,10 +127,11 @@ def _set_domain_mask(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     except Exception as e:
         return e
 
-def _breach_dem(domain:geopandas.GeoDataFrame,ovwerwrite:bool=False):
+def _breach_dem(domain:geopandas.GeoDataFrame,ovwerwrite:bool,verbose:bool):
+    if verbose: print(f'calling _breach_dem for domain {domain.iloc[0]['domain_id']}')
     try:
-        dem    = domain.iloc[0]['dem.tiff']
-        output = domain.iloc[0]['dem_breached.tiff']
+        dem    = os.path.join(domain.iloc[0]['input'],'dem.tiff')
+        output = os.path.join(domain.iloc[0]['input'],'dem_breached.tiff')
         if not os.path.isfile(dem):
             return f'ERROR _breach_dem could not find file {dem}'
         if not os.path.isfile(output) or ovwerwrite:
@@ -137,10 +144,11 @@ def _breach_dem(domain:geopandas.GeoDataFrame,ovwerwrite:bool=False):
     except Exception as e:
         return e
     
-def _breach_dem_fill(domain:geopandas.GeoDataFrame,ovwerwrite:bool=False):
+def _breach_dem_fill(domain:geopandas.GeoDataFrame,ovwerwrite:bool,verbose:bool):
+    if verbose: print(f'calling _breach_dem_fill for domain {domain.iloc[0]['domain_id']}')
     try:
-        dem    = domain.iloc[0]['dem.tiff']
-        output = domain.iloc[0]['dem_breached.tiff']
+        dem    = os.path.join(domain.iloc[0]['input'],'dem.tiff')
+        output = os.path.join(domain.iloc[0]['input'],'dem_breached.tiff')
         if not os.path.isfile(dem):
             return f'ERROR _breach_dem could not find file {dem}'
         if not os.path.isfile(output) or ovwerwrite:
@@ -153,11 +161,12 @@ def _breach_dem_fill(domain:geopandas.GeoDataFrame,ovwerwrite:bool=False):
     except Exception as e:
         return e
 
-def _calc_facc(domain:geopandas.GeoDataFrame,overwrite:bool=False):
+def _calc_facc(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _calc_facc for domain {domain.iloc[0]['domain_id']}')
     try:
-        i             = domain.iloc[0]['dem_breached.tiff']
-        output_ncells = domain.iloc[0]['flow_acc_ncells.tiff']
-        output_sca    = domain.iloc[0]['flow_acc_sca.tiff']
+        i             = os.path.join(domain.iloc[0]['input'],'dem_breached.tiff')
+        output_ncells = os.path.join(domain.iloc[0]['input'],'flow_acc_ncells.tiff')
+        output_sca    = os.path.join(domain.iloc[0]['input'],'flow_acc_sca.tiff')
         if not os.path.isfile(i):
             return f'ERROR _calc_facc could not find file {i}'
         if not os.path.isfile(output_ncells) or overwrite:
@@ -176,10 +185,11 @@ def _calc_facc(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     except Exception as e:
         return e
 
-def _calc_stream_mask(domain:geopandas.GeoDataFrame,facc_thresh:int=10,overwrite:bool=False):
+def _calc_stream_mask(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool,facc_thresh:int=10):
+    if verbose: print(f'calling _calc_stream_mask for domain {domain.iloc[0]['domain_id']}')
     try:
-        flow_accum = domain.iloc[0]['flow_acc_ncells.tiff']
-        output     = domain.iloc[0]['facc_strm_mask.tiff']
+        flow_accum = os.path.join(domain.iloc[0]['input'],'flow_acc_ncells.tiff')
+        output     = os.path.join(domain.iloc[0]['input'],'facc_strm_mask.tiff')
         if not os.path.isfile(flow_accum):
             return f'ERROR _calc_stream_mask could not find file {flow_accum}'
         if not os.path.isfile(output) or overwrite:
@@ -199,10 +209,11 @@ def _calc_stream_mask(domain:geopandas.GeoDataFrame,facc_thresh:int=10,overwrite
     except Exception as e:
         return e
 
-def _calc_slope(domain:geopandas.GeoDataFrame,overwrite:bool=False):
+def _calc_slope(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _calc_slope for domain {domain.iloc[0]['domain_id']}')
     try:
-        dem    = domain.iloc[0]['dem_breached.tiff']
-        output = domain.iloc[0]['slope.tiff']
+        dem    = os.path.join(domain.iloc[0]['input'],'dem_breached.tiff')
+        output = os.path.join(domain.iloc[0]['input'],'slope.tiff')
         if not os.path.isfile(dem):
             return f'ERROR _calc_slope could not find file {dem}'
         if not os.path.isfile(output) or overwrite:
@@ -214,11 +225,12 @@ def _calc_slope(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     except Exception as e:
         return e
 
-def _calc_twi(domain:geopandas.GeoDataFrame,overwrite:bool=False):
+def _calc_twi(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _calc_twi for domain {domain.iloc[0]['domain_id']}')
     try:    
-        sca    = domain.iloc[0]['flow_acc_sca.tiff']
-        slope  = domain.iloc[0]['slope.tiff']
-        output = domain.iloc[0]['twi.tiff']
+        sca    = os.path.join(domain.iloc[0]['input'],'flow_acc_sca.tiff')
+        slope  = os.path.join(domain.iloc[0]['input'],'slope.tiff')
+        output = os.path.join(domain.iloc[0]['input'],'twi.tiff')
         if not os.path.isfile(sca):
             return f'ERROR _calc_twi could not find file {sca}'
         if not os.path.isfile(slope):
@@ -232,10 +244,11 @@ def _calc_twi(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     except Exception as e:
         return e
 
-def _calc_mean_twi(domain:geopandas.GeoDataFrame,overwrite:bool=False):
+def _calc_mean_twi(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _calc_mean_twi for domain {domain.iloc[0]['domain_id']}')
     try:
-        fname_twi      = domain.iloc[0]['twi.tiff']
-        fname_twi_mean = domain.iloc[0]['twi_mean.tiff']
+        fname_twi      = os.path.join(domain.iloc[0]['input'],'twi.tiff')
+        fname_twi_mean = os.path.join(domain.iloc[0]['input'],'twi_mean.tiff')
         if not os.path.isfile(fname_twi): 
             return f'ERROR _calc_mean_twi could not find file {fname_twi}'
         if not os.path.isfile(fname_twi_mean) or overwrite:

@@ -6,12 +6,13 @@ def set_wtd_main(namelist:twtnamelist.Namelist):
     args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
                     [namelist.time.datetime_dim[0]]  * len(domain),
                     [namelist.time.datetime_dim[-1]] * len(domain),
-                    [namelist.options.overwrite]     * len(domain)))
+                    [namelist.options.overwrite]     * len(domain),
+                    [namelist.options.verbose]       * len(domain)))
     twtutils.call_func(_set_wtd,args,namelist)
 
-def _set_wtd(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool=False):
+def _set_wtd(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool,verbose:bool):
     try:
-        e = _download_hydroframe_data(domain,dt_start,dt_end,overwrite)
+        e = _download_hydroframe_data(domain,dt_start,dt_end,overwrite,verbose)
         if e is not None: return e
     except Exception as e:
         return e
@@ -24,7 +25,8 @@ def _get_parflow_conus1_bbox(domain:geopandas.GeoDataFrame):
     conus1grid_maxx, conus1grid_maxy = math.ceil(conus1grid_maxx),  math.ceil(conus1grid_maxy)
     return tuple([conus1grid_minx, conus1grid_miny, conus1grid_maxx, conus1grid_maxy])
 
-def _hf_query(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime):
+def _hf_query(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,verbose:bool):
+    if verbose: print(f'calling _hf_query for domain {domain.iloc[0]['domain_id']}')
     try:
         grid_bounds    = _get_parflow_conus1_bbox(domain)
         start_date_str = dt_start.strftime('%Y-%m-%d')
@@ -45,27 +47,30 @@ def _hf_query(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:da
     except Exception as e:
         return e
 
-def _download_hydroframe_data(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool=False):
+def _download_hydroframe_data(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _download_hydroframe_data for domain {domain.iloc[0]['domain_id']}')
     try:
+        dirraw = os.path.join(domain.iloc[0]['input'],'wtd','raw')
+        os.makedirs(dirraw, exist_ok=True)
         download = False
         dt = dt_start
         while dt <= dt_end:
-            fname = os.path.join(domain.iloc[0]['wtd_raw'],'wtd_'+dt.strftime('%Y%m%d')+'.tiff')
+            fname = os.path.join(dirraw,'wtd_'+dt.strftime('%Y%m%d')+'.tiff')
             if not os.path.isfile(fname) or overwrite:
                 download = True
                 break
             dt += datetime.timedelta(days=1)
         if download:
             conus1_proj, _, conus1_transform, conus1_shape = _get_parflow_conus1_grid_info()
-            hf_data = _hf_query(domain, dt_start, dt_end)
+            hf_data = _hf_query(domain, dt_start, dt_end, verbose)
             if isinstance(hf_data, Exception):
                 return hf_data
             hf_conus1grid_temp = numpy.empty(shape=conus1_shape,dtype=numpy.float64)
             shp = shapely.ops.unary_union(domain.to_crs(conus1_proj).buffer(distance=1000).geometry)
-            wtd_raw_dir = domain.iloc[0]['wtd_raw']
+            grid_bounds = _get_parflow_conus1_bbox(domain)
             for i in range(hf_data.shape[0]):
                 dt = dt_start + datetime.timedelta(days=i)
-                fname = os.path.join(wtd_raw_dir,'wtd_'+dt.strftime('%Y%m%d')+'.tiff')
+                fname = os.path.join(dirraw,'wtd_'+dt.strftime('%Y%m%d')+'.tiff')
                 if not os.path.isfile(fname) or overwrite:
                     hf_conus1grid_temp[grid_bounds[1]:grid_bounds[3],
                                        grid_bounds[0]:grid_bounds[2]] = hf_data[i,:,:]

@@ -4,15 +4,9 @@ class Namelist:
 
     class DirectoryNames:
         project                 = ''
-        input_domain            = ''
-        input_subdomain         = ''
-        wtd_raw                 = ''
-        wtd_resampled           = ''
+        input                   = ''
         pysda                   = ''
-        output_domain           = ''
-        output_raw              = ''
-        output_summary          = ''
-        output_subdomain        = ''
+        output                  = ''
 
     class Time:
         start_date              = ''
@@ -20,24 +14,13 @@ class Namelist:
         datetime_dim            = ''
 
     class FileNames:
-        namlistyaml             = ''
         domain                  = ''
-        domain_mask             = ''
-        nhd                     = ''
-        dem                     = ''
         dem_user                = ''
-        dem_breached            = ''
-        soil_texture            = ''
-        soil_transmissivity     = ''
-        flow_acc_sca            = ''
-        flow_acc_ncells         = ''
-        facc_strm_mask          = ''
-        slope                   = ''
-        twi                     = ''
-        twi_mean                = ''
 
     class Options:
-        name_domain             = ''    
+        domain_hucid            = ''    
+        domain_bbox             = ''
+        domain_latlon           = ''
         overwrite               = False
         verbose                 = False
         resample_method         = None
@@ -65,29 +48,11 @@ class Namelist:
         self._set_f_names()
 
     def _set_d_names(self):
-        self.dirnames.input_domain      = os.path.join(self.dirnames.project,      'input', 'domain')
-        self.dirnames.wtd_raw           = os.path.join(self.dirnames.input_domain, 'wtd_raw')
-        self.dirnames.wtd_resampled     = os.path.join(self.dirnames.input_domain, 'wtd_resampled')
-        self.dirnames.input_subdomain   = os.path.join(self.dirnames.project,      'input', 'subdomain')
-        self.dirnames.output_domain     = os.path.join(self.dirnames.project,      'output','domain')
-        self.dirnames.output_raw        = os.path.join(self.dirnames.output_domain,'output_raw')
-        self.dirnames.output_summary    = os.path.join(self.dirnames.output_domain,'output_summary')
-        self.dirnames.output_subdomain  = os.path.join(self.dirnames.project,      'output','subdomain')
+        self.dirnames.input             = os.path.join(self.dirnames.project, 'input')
+        self.dirnames.output            = os.path.join(self.dirnames.project, 'output')
 
     def _set_f_names(self):
-        self.fnames.domain              = os.path.join(self.dirnames.input_domain, 'domain.gpkg')
-        self.fnames.domain_mask         = os.path.join(self.dirnames.input_domain, 'domain_mask.tiff')
-        self.fnames.nhd                 = os.path.join(self.dirnames.input_domain, 'nhd_hr.gpkg')
-        self.fnames.dem                 = os.path.join(self.dirnames.input_domain, 'dem.tiff')
-        self.fnames.dem_breached        = os.path.join(self.dirnames.input_domain, 'dem_breached.tiff')
-        self.fnames.soil_texture        = os.path.join(self.dirnames.input_domain, 'soil_texture.gpkg')
-        self.fnames.soil_transmissivity = os.path.join(self.dirnames.input_domain, 'soil_transmissivity.tiff')
-        self.fnames.flow_acc_sca        = os.path.join(self.dirnames.input_domain, 'flow_acc_sca.tiff')
-        self.fnames.flow_acc_ncells     = os.path.join(self.dirnames.input_domain, 'flow_acc_ncells.tiff')
-        self.fnames.slope               = os.path.join(self.dirnames.input_domain, 'slope.tiff')
-        self.fnames.facc_strm_mask      = os.path.join(self.dirnames.input_domain, 'facc_strm_mask.tiff')
-        self.fnames.twi                 = os.path.join(self.dirnames.input_domain, 'twi.tiff')
-        self.fnames.twi_mean            = os.path.join(self.dirnames.input_domain, 'twi_mean.tiff')
+        self.fnames.domain              = os.path.join(self.dirnames.input, 'domain.gpkg')
 
     def _make_dirs(self):
         for d in self.dirnames.__dict__:
@@ -119,10 +84,18 @@ class Namelist:
         self.dirnames.project = os.path.abspath(userinput[name_var])
         #
         #
-        name_var = 'domain_name'
-        if name_var not in userinput:
-            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
-        self.options.name_domain = userinput[name_var]
+        names_domain = ['domain_huc','domain_latlon','domain_bbox']
+        if len([name for name in names_domain if name in userinput]) == 0:
+            sys.exit(f'ERROR at least one of the required domain variables ({', '.join(names_domain)}) not found {fname_yaml_input}')
+        name_var = 'domain_huc'
+        if name_var in userinput:
+            self.options.domain_hucid = userinput[name_var]
+        name_var = 'domain_latlon'
+        if name_var in userinput:
+            self.options.domain_latlon = userinput[name_var]
+        name_var = 'domain_bbox'
+        if name_var in userinput:
+            self.options.domain_bbox = userinput[name_var]
         #
         #
         name_var = 'start_date'

@@ -5,18 +5,20 @@ def set_soils_main(namelist:twtnamelist.Namelist):
     if namelist.options.verbose: print('calling set_soils_main')
     domain = geopandas.read_file(namelist.fnames.domain)
     args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
-                    [namelist.options.overwrite] * len(domain)))
+                    [namelist.options.overwrite] * len(domain),
+                    [namelist.options.verbose] * len(domain)))
     twtutils.call_func(_set_soils,args,namelist)
 
-def _set_soils(domain:geopandas.GeoDataFrame,overwrite:bool=False):
-    e = _set_soil_texture(domain,overwrite)
+def _set_soils(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    e = _set_soil_texture(domain,overwrite,verbose)
     if e is not None: return e
-    e = _set_soil_transmissivity(domain,overwrite)
+    e = _set_soil_transmissivity(domain,overwrite,verbose)
     return e
 
-def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool=False):
+def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _set_soil_texture for domain {domain.iloc[0]['domain_id']}')
     try:
-        fname_texture = domain.iloc[0]['soil_texture.gpkg']
+        fname_texture = os.path.join(domain.iloc[0]['input'],'soil_texture.gpkg')
         if not os.path.isfile(fname_texture) or overwrite:
             import sdapoly,sdaprop
             """Get soil texture - uses pysda via https://github.com/ncss-tech/pysda.git"""
@@ -52,11 +54,12 @@ def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool=False):
     except Exception as e:
         return e
 
-def _set_soil_transmissivity(domain:geopandas.GeoDataFrame,overwrite:bool=False):
+def _set_soil_transmissivity(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _set_soil_transmissivity for domain {domain.iloc[0]['domain_id']}')
     try:
-        fname_texture        = domain.iloc[0]['soil_texture.gpkg']
-        fname_dem            = domain.iloc[0]['dem.tiff']
-        fname_transmissivity = domain.iloc[0]['soil_transmissivity.tiff']
+        fname_texture        = os.path.join(domain.iloc[0]['input'],'soil_texture.gpkg')
+        fname_dem            = os.path.join(domain.iloc[0]['input'],'dem.tiff')
+        fname_transmissivity = os.path.join(domain.iloc[0]['input'],'soil_transmissivity.tiff')
         if not os.path.isfile(fname_transmissivity) or overwrite:
             dt_transmissivity = {'clay heavy'    :3.2,
                                 'silty clay'     :3.1,
