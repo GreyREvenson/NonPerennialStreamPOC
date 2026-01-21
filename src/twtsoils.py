@@ -1,4 +1,5 @@
-import os,sys,numpy,pandas,geopandas,rasterio,soiltexture,twtnamelist,multiprocessing,twtutils
+import os,sys,numpy,pandas,geopandas,rasterio,soiltexture,twtnamelist,multiprocessing,twtutils,soildb
+from urllib import response
 
 def set_soils_main(namelist:twtnamelist.Namelist):
     """Get soil texture and transmissivity data for domain"""
@@ -16,6 +17,45 @@ def _set_soils(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
     return e
 
 def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    if verbose: print(f'calling _set_soil_texture for domain {domain.iloc[0]['domain_id']}')
+    try:
+        fname_texture = os.path.join(domain.iloc[0]['input'],'soil_texture.gpkg')
+        if not os.path.isfile(fname_texture) or overwrite:
+            response = soildb.spatial_query(geometry=domain.to_crs(epsg=4326).geometry.union_all().wkt,
+                                            table="mupolygon",
+                                            spatial_relation="intersects",
+                                            return_type="spatial")
+            soilsgdf = response.to_geodataframe()
+            response = soildb.fetch_by_keys(soilsgdf.mukey.unique().tolist(), 
+                                            "component",
+                                            key_column="mukey",
+                                            columns=["mukey","cokey", "compname", "comppct_r"])
+            comps = response.to_pandas()
+            dom_comps = comps.loc[comps.groupby('mukey')['comppct_r'].idxmax()] # get dominant component per map unit
+            response = soildb.fetch_by_keys(dom_comps['cokey'].tolist(), 
+                                            "chorizon",
+                                            key_column="cokey",
+                                            columns=["cokey","sandtotal_r","silttotal_r","claytotal_r","hzdept_r",'hzdepb_r','hzdept_r'])
+            chorizons = response.to_pandas()
+            chorizons['depth_range'] = chorizons['hzdepb_r'] - chorizons['hzdept_r']
+            sand = chorizons.groupby('cokey')[['sandtotal_r', 'depth_range']].apply(lambda x: (x['sandtotal_r'] * x['depth_range']).sum() / x['depth_range'].sum()).reset_index(name='weighted_sandtotal_r')
+            silt = chorizons.groupby('cokey')[['silttotal_r', 'depth_range']].apply(lambda x: (x['silttotal_r'] * x['depth_range']).sum() / x['depth_range'].sum()).reset_index(name='weighted_silttotal_r')
+            clay = chorizons.groupby('cokey')[['claytotal_r', 'depth_range']].apply(lambda x: (x['claytotal_r'] * x['depth_range']).sum() / x['depth_range'].sum()).reset_index(name='weighted_claytotal_r')
+            texture = sand.merge(silt, on='cokey').merge(clay, on='cokey')
+            def calc_texture(row): 
+                try: sand = float(row['weighted_sandtotal_r'])
+                except: return 'None'
+                try: clay = float(row['weighted_claytotal_r'])
+                except: return 'None'
+                return soiltexture.getTexture(sand,clay)
+            texture['texture'] = texture.apply(calc_texture, axis=1)
+            soilsgdf = soilsgdf.merge(dom_comps.merge(texture, on='cokey')[['mukey','texture']], on='mukey')
+            soilsgdf.to_crs(domain.crs).to_file(fname_texture, driver="GPKG")
+        return None
+    except Exception as e:
+        return e
+
+def _set_soil_texture_old(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
     if verbose: print(f'calling _set_soil_texture for domain {domain.iloc[0]['domain_id']}')
     try:
         fname_texture = os.path.join(domain.iloc[0]['input'],'soil_texture.gpkg')
