@@ -5,7 +5,6 @@ class Namelist:
     class DirectoryNames:
         project                 = ''
         input                   = ''
-        pysda                   = ''
         output                  = ''
 
     class Time:
@@ -135,19 +134,6 @@ class Namelist:
             self.options.facc_strm_threshold = int(userinput[name_var])
         except ValueError:
             sys.exit(f'ERROR invalid start date {userinput[name_var]} in {fname_yaml_input}')
-        #
-        #
-        name_pysda = 'pysda'
-        if name_pysda not in userinput:
-            sys.exit(f'ERROR required variable {name_pysda} not found {fname_yaml_input}')
-        if not os.path.isdir(userinput[name_pysda]):
-            sys.exit(f'ERROR pysda directory {userinput[name_pysda]} does not exist')
-        if not os.path.isfile(os.path.join(userinput[name_pysda],'sdapoly.py')): 
-            sys.exit(f'ERROR pysda directory {userinput[name_pysda]} does not contain sdapoly.py')
-        if not os.path.isfile(os.path.join(userinput[name_pysda],'sdaprop.py')): 
-            sys.exit(f'ERROR pysda directory {userinput[name_pysda]} does not contain sdaprop.py')
-        self.dirnames.pysda = os.path.abspath(userinput[name_pysda])
-        if self.dirnames.pysda not in sys.path: sys.path.append(self.dirnames.pysda)
         #
         #
         name_var = 'dem'
