@@ -1,4 +1,4 @@
-import os,sys,numpy,geopandas,py3dep,rasterio,shutil,twtnamelist,pygeohydro,whitebox,shapely,multiprocessing,twtutils
+import os,sys,numpy,geopandas,py3dep,rasterio,twtnamelist,whitebox,shapely,twtutils
 from scipy.ndimage import uniform_filter
 
 def calc_topo_main(namelist:twtnamelist.Namelist):
@@ -136,6 +136,7 @@ def _breach_dem(domain:geopandas.GeoDataFrame,ovwerwrite:bool,verbose:bool):
             return f'ERROR _breach_dem could not find file {dem}'
         if not os.path.isfile(output) or ovwerwrite:
             wbt = whitebox.WhiteboxTools()
+            if not verbose: wbt.verbose = False
             wbt.breach_depressions_least_cost(dem    = dem,
                                               output = output,
                                               fill   = False,
@@ -153,6 +154,7 @@ def _breach_dem_fill(domain:geopandas.GeoDataFrame,ovwerwrite:bool,verbose:bool)
             return f'ERROR _breach_dem could not find file {dem}'
         if not os.path.isfile(output) or ovwerwrite:
             wbt = whitebox.WhiteboxTools()
+            if not verbose: wbt.verbose = False
             wbt.breach_depressions_least_cost(dem    = dem,
                                               output = output,
                                               fill   = True,
@@ -171,12 +173,14 @@ def _calc_facc(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
             return f'ERROR _calc_facc could not find file {i}'
         if not os.path.isfile(output_ncells) or overwrite:
             wbt = whitebox.WhiteboxTools()
+            if not verbose: wbt.verbose = False
             wbt.d_inf_flow_accumulation(i        = i,
                                         output   = output_ncells,
                                         out_type = 'cells',
                                         log      = False)
         if not os.path.isfile(output_sca) or overwrite:
             wbt = whitebox.WhiteboxTools()
+            if not verbose: wbt.verbose = False
             wbt.d_inf_flow_accumulation(i        = i,
                                         output   = output_sca,
                                         out_type = 'sca',
@@ -194,6 +198,7 @@ def _calc_stream_mask(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool,
             return f'ERROR _calc_stream_mask could not find file {flow_accum}'
         if not os.path.isfile(output) or overwrite:
             wbt = whitebox.WhiteboxTools()
+            if not verbose: wbt.verbose = False
             wbt.extract_streams(flow_accum      = flow_accum,
                                 output          = output,
                                 threshold       = facc_thresh,
@@ -218,6 +223,7 @@ def _calc_slope(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
             return f'ERROR _calc_slope could not find file {dem}'
         if not os.path.isfile(output) or overwrite:
             wbt = whitebox.WhiteboxTools()
+            if not verbose: wbt.verbose = False
             wbt.slope(dem    = dem,
                       output = output,
                       units  = 'degrees')
@@ -237,6 +243,7 @@ def _calc_twi(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
             return f'ERROR _calc_twi could not find file {slope}'
         if not os.path.isfile(output) or overwrite:
             wbt = whitebox.WhiteboxTools()
+            if not verbose: wbt.verbose = False
             wbt.wetness_index(sca    = sca,
                               slope  = slope,
                               output = output)
