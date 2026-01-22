@@ -168,6 +168,7 @@ def _calc_summary_perc_inundated_main(namelist:twtnamelist.Namelist):
 def _calc_summary_perc_inundated(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool,verbose:bool):
     if verbose: print(f'calling _calc_summary_perc_inundated for domain {domain.iloc[0]['domain_id']}')
     domain_mask = rasterio.open(os.path.join(domain.iloc[0]['input'],'domain_mask.tiff'),'r').read(1)
+    diroutraw = os.path.join(domain.iloc[0]['output'],'raw')
     diroutsum  = os.path.join(domain.iloc[0]['output'],'summary')
     if not os.path.isdir(diroutsum): os.makedirs(diroutsum, exist_ok=True)
     fname_output = os.path.join(diroutsum,
@@ -177,7 +178,7 @@ def _calc_summary_perc_inundated(domain:geopandas.GeoDataFrame,dt_start:datetime
         idt     = dt_start
         while idt < dt_end:
             dt_str          = idt.strftime('%Y%m%d')
-            fname_inund_dti = os.path.join(domain.iloc[0]['output_raw'],
+            fname_inund_dti = os.path.join(diroutraw,
                                            f'inundation_{dt_str}.tiff')
             inun_dti        = rasterio.open(fname_inund_dti,'r').read(1)
             sumgrid        += inun_dti
