@@ -1,5 +1,6 @@
 import os,sys,numpy,pandas,geopandas,rasterio,soiltexture,twtnamelist,multiprocessing,twtutils,soildb
 from urllib import response
+import asyncio
 
 def set_soils_main(namelist:twtnamelist.Namelist):
     """Get soil texture and transmissivity data for domain"""
@@ -8,31 +9,31 @@ def set_soils_main(namelist:twtnamelist.Namelist):
     args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
                     [namelist.options.overwrite] * len(domain),
                     [namelist.options.verbose] * len(domain)))
-    twtutils.call_func(_set_soils,args,namelist)
+    with multiprocessing.Pool() as pool: pool.starmap(_set_soil_texture_async_wrapper, args) # _set_soil_texture is async so needs special handling for multiprocessing. don't use twtutils.call_func here
+    twtutils.call_func(_set_soil_transmissivity, args, namelist)
 
-def _set_soils(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
-    e = _set_soil_texture(domain,overwrite,verbose)
-    if e is not None: return e
-    e = _set_soil_transmissivity(domain,overwrite,verbose)
-    return e
+def _set_soil_texture_async_wrapper(domain, overwrite, verbose):
+    """async wrapper for _set_soil_texture - required for multiprocessing"""
+    return asyncio.run(_set_soil_texture(domain, overwrite, verbose))
 
-def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
-    if verbose: print(f'calling _set_soil_texture for domain {domain.iloc[0]['domain_id']}')
+async def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+    ### TODO: verbose isn't printing inside async function when called from multiprocessing pool, or maybe this is IDE related?
+    if verbose: print(f'calling _set_soil_texture for domain {domain.iloc[0]['domain_id']}',flush=True)
     try:
         fname_texture = os.path.join(domain.iloc[0]['input'],'soil_texture.gpkg')
         if not os.path.isfile(fname_texture) or overwrite:
-            response = soildb.spatial_query(geometry=domain.to_crs(epsg=4326).geometry.union_all().wkt,
+            response = await soildb.spatial_query(geometry=domain.to_crs(epsg=4326).geometry.union_all().wkt,
                                             table="mupolygon",
                                             spatial_relation="intersects",
                                             return_type="spatial")
             soilsgdf = response.to_geodataframe()
-            response = soildb.fetch_by_keys(soilsgdf.mukey.unique().tolist(), 
+            response = await soildb.fetch_by_keys(soilsgdf.mukey.unique().tolist(), 
                                             "component",
                                             key_column="mukey",
                                             columns=["mukey","cokey", "compname", "comppct_r"])
             comps = response.to_pandas()
             dom_comps = comps.loc[comps.groupby('mukey')['comppct_r'].idxmax()] # get dominant component per map unit
-            response = soildb.fetch_by_keys(dom_comps['cokey'].tolist(), 
+            response = await soildb.fetch_by_keys(dom_comps['cokey'].tolist(), 
                                             "chorizon",
                                             key_column="cokey",
                                             columns=["cokey","sandtotal_r","silttotal_r","claytotal_r","hzdept_r",'hzdepb_r','hzdept_r'])
@@ -51,45 +52,6 @@ def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool)
             texture['texture'] = texture.apply(calc_texture, axis=1)
             soilsgdf = soilsgdf.merge(dom_comps.merge(texture, on='cokey')[['mukey','texture']], on='mukey')
             soilsgdf.to_crs(domain.crs).to_file(fname_texture, driver="GPKG")
-        return None
-    except Exception as e:
-        return e
-
-def _set_soil_texture_old(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
-    if verbose: print(f'calling _set_soil_texture for domain {domain.iloc[0]['domain_id']}')
-    try:
-        fname_texture = os.path.join(domain.iloc[0]['input'],'soil_texture.gpkg')
-        if not os.path.isfile(fname_texture) or overwrite:
-            import sdapoly,sdaprop
-            """Get soil texture - uses pysda via https://github.com/ncss-tech/pysda.git"""
-            soils_aoi = sdapoly.gdf(domain)
-            sandtotal_r=sdaprop.getprop(df=soils_aoi,
-                                        column='mukey',
-                                        method='dom_comp_num',
-                                        top=0,
-                                        bottom=400,
-                                        prop='sandtotal_r',
-                                        minmax=None,
-                                        prnt=False,
-                                        meta=False)
-            claytotal_r=sdaprop.getprop(df=soils_aoi,
-                                        column='mukey',
-                                        method='dom_comp_num',
-                                        top=0,
-                                        bottom=400,
-                                        prop='claytotal_r',
-                                        minmax=None,
-                                        prnt=False,
-                                        meta=False)
-            soils_texture = soils_aoi.merge(pandas.merge(sandtotal_r,claytotal_r,on='mukey'),on='mukey')
-            def calc_texture(row): 
-                try: sand = float(row['sandtotal_r'])
-                except: return 'None'
-                try: clay = float(row['claytotal_r'])
-                except: return 'None'
-                return soiltexture.getTexture(sand,clay)
-            soils_texture['texture'] = soils_texture.apply(calc_texture, axis=1)
-            soils_texture.to_crs(domain.crs).to_file(fname_texture, driver="GPKG") #'EPSG:4326'
         return None
     except Exception as e:
         return e

@@ -1,6 +1,6 @@
 # 
 # Main project directory
-project_directory: 'C:\Users\GEVENSON\GitHub\NonPerennialStreamPOC\examples\buckhorn'
+project_directory: '..\'
 #
 # HUC id to define the domain
 domain_huc: '051002010506'
@@ -10,9 +10,6 @@ overwrite: False
 #
 # Print additional model messages 
 verbose: True
-#
-# path to optional dem input - model will otherwise download and use 10m USGS NED DEM
-dem: 'C:\Users\GEVENSON\GitHub\dem.tiff'
 #
 # start date for analysis - must be within parflow simulation period
 start_date: '2002-10-01'

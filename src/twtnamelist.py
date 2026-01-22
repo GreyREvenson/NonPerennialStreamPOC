@@ -188,6 +188,8 @@ class Namelist:
         if name_var in userinput:
             try:
                 self.options.huc_break_lvl = int(userinput[name_var])
+                if self.options.huc_break_lvl not in (2,4,6,8,10,12):
+                    sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
             except ValueError:
                 sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
         if name_var not in userinput and isinstance(self.options.core_count,int):
