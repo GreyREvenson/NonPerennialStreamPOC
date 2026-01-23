@@ -49,8 +49,8 @@ def _set_domain(namelist:twtnamelist.Namelist):
         elif len(namelist.options.domain_latlon) == 2:
             if namelist.options.verbose: print(f'  setting domain from domain_latlon {namelist.options.domain_latlon}')
             try:
-                geom = shapely.geometry.Point(namelist.options.domain_latlon[0],
-                                            namelist.options.domain_latlon[1]).buffer(0.01)
+                geom = shapely.geometry.Point(namelist.options.domain_latlon[1],
+                                              namelist.options.domain_latlon[0]).buffer(0.01)
                 huc_lvl = namelist.options.huc_break_lvl if namelist.options.huc_break_lvl in (2,4,6,8,10,12) else 12
                 colnam = f'huc{huc_lvl}'
                 hucs   = pygeohydro.WBD(colnam)
