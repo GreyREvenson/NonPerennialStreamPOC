@@ -16,12 +16,15 @@ def _mask(fname:str, huc:geopandas.GeoDataFrame):
 
 def call_func(func,args:tuple,namelist:twtnamelist.Namelist):
     """function wrapper"""
+    if len(args) == 0: return
     if isinstance(args[0], list) or isinstance(args[0], tuple):
         domain_ids = [args[i][0].iloc[0]['domain_id'] for i in range(len(args))]
     else:
         domain_ids = [args[i].iloc[0]['domain_id'] for i in range(len(args))]
     if namelist.options.pp and len(args) > 1:
-        with multiprocessing.Pool(processes=min(namelist.options.core_count, len(args))) as pool:
+        cc = min(namelist.options.core_count, len(args))
+        if namelist.options.verbose: print(f'calling {func.__name__} in parallel with {cc} cores', flush=True)
+        with multiprocessing.Pool(processes=cc) as pool:
             if isinstance(args[0], list) or isinstance(args[0], tuple):
                 results  = [pool.apply_async(func, arg) for arg in args]
             else:
