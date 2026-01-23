@@ -4,62 +4,88 @@ class twtfoliummap(folium.Map):
 
     def __init__(self,namelist:twtnamelist.Namelist,*args,**kwargs):
         super().__init__(*args, **kwargs)
+        if 'domain_id' in kwargs:
+            self.domain_id = kwargs['domain_id']
+        elif 'domainid' in kwargs:
+            self.domain_id = kwargs['domainid']
+        else:
+            domain = geopandas.read_file(namelist.fnames.domain)
+            self.domain_id = domain['domain_id'].unique().tolist()[0]
+            if len(domain['domain_id'].unique().tolist()) != 1:
+                print(f'INFO folium map initialized without domain_id - using {self.domain_id}')
+        self._set_fnames(namelist=namelist)
         self._add_domain(namelist=namelist)
         self._add_nhd(namelist=namelist)
 
+    def _set_fnames(self,namelist:twtnamelist.Namelist):
+        """Set file names for various data layers"""
+        dstr                      = (namelist.time.datetime_dim[0].strftime('%Y%m%d')+'_'+
+                                     namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'))
+        dinput                    = os.path.join(namelist.dirnames.input,str(self.domain_id))
+        doutput                   = os.path.join(namelist.dirnames.output,str(self.domain_id),'summary')
+        self.fname_soil_texture   = os.path.join(dinput,'soil_texture.gpkg')
+        self.fname_transmissivity = os.path.join(dinput,'soil_transmissivity.tiff')
+        self.fname_nhd            = os.path.join(dinput,'nhd_hr.gpkg')
+        self.fname_twi            = os.path.join(dinput,'twi.tiff')
+        self.fname_slope          = os.path.join(dinput,'slope.tiff')
+        self.fname_flow_acc       = os.path.join(dinput,'flow_acc_ncells.tiff')
+        self.fname_dem            = os.path.join(dinput,'dem.tiff')      
+        self.fname_dem_breached   = os.path.join(dinput,'dem_breached.tiff') 
+        self.fname_percinundated  = os.path.join(doutput,"".join(['percent_inundated_grid_',dstr,'.tiff']))
+        self.fname_meanwtd        = os.path.join(doutput,"".join(['mean_wtd_',dstr,'.tiff']))
+        self.fname_nonperennial   = os.path.join(doutput,"".join(['nonperennial_strms_',dstr,'.tiff']))
+        self.fname_perennial      = os.path.join(doutput,"".join(['perennial_strms_',dstr,'.tiff']))
+
     def add_transmissivity(self,namelist:twtnamelist.Namelist):
         """Add transmissivity data to self"""
-        if not os.path.isfile(namelist.fnames.soil_transmissivity): 
-            sys.exit('ERROR _add_transmissivity could not find '+namelist.fnames.soil_transmissivity)
+        if not os.path.isfile(self.fname_transmissivity): 
+            sys.exit('ERROR _add_transmissivity could not find '+self.fname_transmissivity)
         self._add_grid(name='Transmissivity Decay Factor (f)',
-                      fname=namelist.fnames.soil_transmissivity,
+                      fname=self.fname_transmissivity,
                       cmap=branca.colormap.linear.viridis)
 
     def add_twi(self,namelist:twtnamelist.Namelist):
         """Add topological wetness index (TWI) data to self"""
-        if not os.path.isfile(namelist.fnames.twi): 
-            sys.exit('ERROR add_twi could not find '+namelist.fnames.twi)
+        if not os.path.isfile(self.fname_twi): 
+            sys.exit('ERROR add_twi could not find '+self.fname_twi)
         self._add_grid(name='Topological Wetness Index (TWI)',
-                      fname=namelist.fnames.twi,
+                      fname=self.fname_twi,
                       cmap=branca.colormap.linear.viridis)
 
     def add_slope(self,namelist:twtnamelist.Namelist):
         """Add slope data to self"""
-        if not os.path.isfile(namelist.fnames.slope): 
-            sys.exit('ERROR add_slope could not find '+namelist.fnames.slope)
+        if not os.path.isfile(self.fname_slope): 
+            sys.exit('ERROR add_slope could not find '+self.fname_slope)
         self._add_grid(name='Slope (degrees)',
-                      fname=namelist.fnames.slope,
+                      fname=self.fname_slope,
                       cmap=branca.colormap.linear.Greys_07)
 
     def add_facc(self,namelist:twtnamelist.Namelist):
         """Add flow accumulation data to self"""
-        if not os.path.isfile(namelist.fnames.flow_acc): 
-            sys.exit('ERROR add_facc could not find '+namelist.fnames.flow_acc)
+        if not os.path.isfile(self.fname_flow_acc): 
+            sys.exit('ERROR add_facc could not find '+self.fname_flow_acc)
         self._add_grid(name='Flow accumulation',
-                      fname=namelist.fnames.flow_acc,
+                      fname=self.fname_flow_acc,
                       cmap=branca.colormap.linear.viridis)
 
     def add_dem(self,namelist:twtnamelist.Namelist):
         """Add dems to self"""
-        if not os.path.isfile(namelist.fnames.dem):          
-            sys.exit('ERROR get_fmap_dem could not find '+namelist.fnames.dem)
+        if not os.path.isfile(self.fname_dem):          
+            sys.exit('ERROR get_fmap_dem could not find '+self.fname_dem)
         self._add_grid(name='DEM (m)',
-                      fname=namelist.fnames.dem,
+                      fname=self.fname_dem,
                       cmap=branca.colormap.linear.Greys_07)
-        if not os.path.isfile(namelist.fnames.dem_breached): 
-            sys.exit('ERROR get_fmap_dem could not find '+namelist.fnames.dem_breached)
+        if not os.path.isfile(self.fname_dem_breached): 
+            sys.exit('ERROR get_fmap_dem could not find '+self.fname_dem_breached)
         self._add_grid(name='DEM (breached) (m)',
-                      fname=namelist.fnames.dem_breached,
+                      fname=self.fname_dem_breached,
                       cmap=branca.colormap.linear.Greys_07)
 
     def add_meanwtd(self,namelist:twtnamelist.Namelist):
         """Add mean wtd data to self"""
-        fname = "".join(['mean_wtd_',
-                         namelist.time.datetime_dim[0].strftime('%Y%m%d'),
-                         '_to_',
-                         namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
-                         '.tiff'])
-        fname = os.path.join(namelist.dirnames.output_summary,fname)
+        fname = self.fname_meanwtd
+        if not os.path.isfile(fname): 
+            sys.exit(f'ERROR add_meanwtd could not find {fname}')
         cmap = branca.colormap.linear.viridis
         self._add_grid(name= f'Mean WTD (m) ({namelist.options.name_resample_method})',
                        fname=os.path.join(dir,fname),
@@ -67,12 +93,9 @@ class twtfoliummap(folium.Map):
 
     def add_percinundated(self,namelist:twtnamelist.Namelist):
         """Get folium map of mean percent inundation values for full grid"""
-        fname = "".join(['percent_inundated_grid_',
-                         namelist.time.datetime_dim[0].strftime('%Y%m%d'),
-                         '_to_',
-                         namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
-                         '.tiff'])
-        fname = os.path.join(namelist.dirnames.output_summary,fname)
+        fname = self.fname_percinundated
+        if not os.path.isfile(fname): 
+            sys.exit(f'ERROR add_percinundated could not find {fname}')
         cmap = branca.colormap.linear.Reds_08
         self._add_grid(name=f'WTD-TWI %-Inundated ({namelist.options.name_resample_method})',
                        fname=fname,
@@ -80,12 +103,9 @@ class twtfoliummap(folium.Map):
 
     def add_nonperennial_strm_classification(self,namelist:twtnamelist.Namelist):
         """Add non-perennial stream classification to self"""
-        fname = "".join(['nonperennial_strms_',
-                         namelist.time.datetime_dim[0].strftime('%Y%m%d'),
-                         '_to_',
-                         namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
-                         '.tiff'])
-        fname = os.path.join(namelist.dirnames.output_summary,fname)
+        fname = self.fname_nonperennial
+        if not os.path.isfile(fname): 
+            sys.exit(f'ERROR add_nonperennial_strm_classification could not find {fname}')
         cmap = branca.colormap.linear.Blues_07
         self._add_grid(name='WTD-TWI Non-perennial ({namelist.options.name_resample_method})',
                         fname=fname,
@@ -93,12 +113,9 @@ class twtfoliummap(folium.Map):
                 
     def add_perennial_strm_classification(self,namelist:twtnamelist.Namelist):
         """Get folium map of mean WTD values"""
-        fname = "".join(['perennial_strms_',
-                         namelist.time.datetime_dim[0].strftime('%Y%m%d'),
-                         '_to_',
-                         namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'),
-                         '.tiff'])
-        fname = os.path.join(namelist.dirnames.output_summary,fname)
+        fname = self.fname_perennial
+        if not os.path.isfile(fname): 
+            sys.exit(f'ERROR add_perennial_strm_classification could not find {fname}')
         cmap = branca.colormap.LinearColormap(['white','red'], vmin=0, vmax=1)
         if os.path.isfile(fname):
             self._add_grid(name='WTD-TWI Perennial ({namelist.options.name_resample_method})',
@@ -186,9 +203,10 @@ class twtfoliummap(folium.Map):
 
     def add_texture(self,namelist:twtnamelist.Namelist):
         """Add soil texture data to self"""
-        if not os.path.isfile(namelist.fnames.soil_texture): 
-            sys.exit('ERROR _add_texture could not find '+namelist.fnames.soil_texture)
-        soils = geopandas.read_file(namelist.fnames.soil_texture)
+        fname = self.fname_soil_texture
+        if not os.path.isfile(fname): 
+            sys.exit(f'ERROR add_texture could not find {fname}')
+        soils = geopandas.read_file(fname)
         textures = sorted(set(soils['texture']))
         cmap = branca.colormap.linear.viridis.scale(0, len(textures)).to_step(len(textures))
         texture_colors = {texture: cmap(i) for i, texture in enumerate(textures)}
@@ -220,6 +238,7 @@ class twtfoliummap(folium.Map):
         if not os.path.isfile(namelist.fnames.domain): 
             sys.exit('ERROR _add_domain could not find '+namelist.fnames.domain)
         domain = geopandas.read_file(namelist.fnames.domain)
+        domain = domain[domain['domain_id'] == str(self.domain_id)]
         domainfg = folium.FeatureGroup(name='Domain')
         for _, r in domain.iterrows():
             folium.GeoJson(data=geopandas.GeoSeries(r['geometry']).to_json(),
@@ -232,9 +251,10 @@ class twtfoliummap(folium.Map):
         
     def _add_nhd(self,namelist:twtnamelist.Namelist):
         """Add nhd boundary to self"""
-        if not os.path.isfile(namelist.fnames.nhd): 
-            sys.exit('ERROR _add_nhd could not find '+namelist.fnames.nhd)
-        nhd = geopandas.read_file(namelist.fnames.nhd)
+        fname = self.fname_nhd
+        if not os.path.isfile(fname): 
+            sys.exit('ERROR _add_nhd could not find '+fname)
+        nhd = geopandas.read_file(fname)
         nhdfg = folium.FeatureGroup(name='NHD HD')
         for _, r in nhd.iterrows(): 
             folium.GeoJson(data=geopandas.GeoSeries(r['geometry']).to_json()).add_to(nhdfg)
