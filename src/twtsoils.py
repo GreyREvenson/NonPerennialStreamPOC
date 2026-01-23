@@ -9,7 +9,10 @@ def set_soils_main(namelist:twtnamelist.Namelist):
     args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
                     [namelist.options.overwrite] * len(domain),
                     [namelist.options.verbose] * len(domain)))
-    with multiprocessing.Pool() as pool: pool.starmap(_set_soil_texture_async_wrapper, args) # _set_soil_texture is async so needs special handling for multiprocessing. don't use twtutils.call_func here
+    if len(args) == 1: 
+        _set_soil_texture_async_wrapper(*args[0]) # run directly if only one domain
+    else: 
+        with multiprocessing.Pool() as pool: pool.starmap(_set_soil_texture_async_wrapper, args) # _set_soil_texture is async so needs special handling for multiprocessing. don't use twtutils.call_func here
     twtutils.call_func(_set_soil_transmissivity, args, namelist)
 
 def _set_soil_texture_async_wrapper(domain, overwrite, verbose):
