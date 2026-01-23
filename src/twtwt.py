@@ -2,6 +2,7 @@ import os,sys,math,datetime,geopandas,hf_hydrodata,rasterio,numpy,twtnamelist,mu
 
 def set_wtd_main(namelist:twtnamelist.Namelist):
     if namelist.options.verbose: print('calling set_wtd_main')
+    hf_hydrodata.register_api_pin(namelist.options.hf_hydrodata_un, namelist.options.hf_hydrodata_pin)
     domain = geopandas.read_file(namelist.fnames.domain)
     args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
                     [namelist.time.datetime_dim[0]]  * len(domain),
