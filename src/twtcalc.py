@@ -27,7 +27,7 @@ def _calc_inundation_main(namelist:twtnamelist.Namelist):
 def _calc_inundation(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,write_wtd_mean_flag:bool,overwrite:bool,verbose:bool):
     """Calculate inundation using TOPMODEL-based approach from Zhang et al. (2016)"""
     #write_wtd_mean_flag: if True, write resampled mean WTD grids to domain wtd_resampled directory
-    if verbose: print(f'calling _calc_inundation for domain {domain.iloc[0]['domain_id']}')
+    if verbose: print(f'calling _calc_inundation for domain {domain.iloc[0]['domain_id']}',flush=True)
     try:
         calc_flag = False
         idt       = dt_start
@@ -119,7 +119,7 @@ def _calc_strm_permanence_main(namelist:twtnamelist.Namelist):
     twtutils.call_func(_calc_strm_permanence,args,namelist)
 
 def _calc_strm_permanence(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool,verbose:bool):
-    if verbose: print(f'calling _calc_strm_permanence for domain {domain.iloc[0]['domain_id']}')
+    if verbose: print(f'calling _calc_strm_permanence for domain {domain.iloc[0]['domain_id']}',flush=True)
     try:
         tstr      = f'{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}'
         diroutsum = os.path.join(domain.iloc[0]['output'],'summary')
