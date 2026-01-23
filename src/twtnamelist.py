@@ -29,6 +29,8 @@ class Namelist:
         pp                      = False
         core_count              = ''
         write_resampled_wtd     = False
+        hf_hydrodata_un         = ''
+        hf_hydrodata_pin        = ''
 
     def __init__(self,filename:str):
         self._init_vars()
@@ -184,7 +186,7 @@ class Namelist:
                 sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
         #
         #
-        name_var = 'pp_huc_break_lvl'
+        name_var = 'huc_break_lvl'
         if name_var in userinput:
             try:
                 self.options.huc_break_lvl = int(userinput[name_var])
@@ -193,4 +195,21 @@ class Namelist:
             except ValueError:
                 sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
         if name_var not in userinput and isinstance(self.options.core_count,int):
-            sys.exit(f'ERROR {name_var} must be defined if pp_core_count is defined in {fname_yaml_input}')
+            if self.options.verbose:
+                print(f'INFO {name_var} not defined but pp_core_count is {self.options.core_count} : parallel processing will not be implemented')
+        #
+        #
+        name_var = 'hf_hydrodata_un'
+        if name_var in userinput:
+            try:
+                self.options.hf_hydrodata_un = userinput[name_var]
+            except ValueError:
+                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
+        #
+        #
+        name_var = 'hf_hydrodata_pin'
+        if name_var in userinput:
+            try:
+                self.options.hf_hydrodata_pin = userinput[name_var]
+            except ValueError:
+                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
