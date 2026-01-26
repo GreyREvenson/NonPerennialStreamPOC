@@ -54,7 +54,8 @@ async def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool,verbose
                 return soiltexture.getTexture(sand,clay)
             texture['texture'] = texture.apply(calc_texture, axis=1)
             soilsgdf = soilsgdf.merge(dom_comps.merge(texture, on='cokey')[['mukey','texture']], on='mukey')
-            soilsgdf.to_crs(domain.crs).to_file(fname_texture, driver="GPKG")
+            soilsgdf = geopandas.clip(gdf=soilsgdf.to_crs(domain.crs),mask=domain)
+            soilsgdf.to_file(fname_texture, driver="GPKG")
         return None
     except Exception as e:
         return e
