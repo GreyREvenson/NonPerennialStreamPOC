@@ -15,11 +15,11 @@ class twtfoliummap(folium.Map):
                 print(f'INFO folium map initialized without domain_id - using {self.domain_id}')
         self._set_fnames(namelist=namelist)
         self._add_domain(namelist=namelist)
-        self._add_nhd(namelist=namelist)
+        self._add_nhd()
 
     def _set_fnames(self,namelist:twtnamelist.Namelist):
         """Set file names for various data layers"""
-        dstr                      = (namelist.time.datetime_dim[0].strftime('%Y%m%d')+'_'+
+        dstr                      = (namelist.time.datetime_dim[0].strftime('%Y%m%d')+'_to_'+
                                      namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'))
         dinput                    = os.path.join(namelist.dirnames.input,str(self.domain_id))
         doutput                   = os.path.join(namelist.dirnames.output,str(self.domain_id),'summary')
@@ -28,7 +28,7 @@ class twtfoliummap(folium.Map):
         self.fname_nhd            = os.path.join(dinput,'nhd_hr.gpkg')
         self.fname_twi            = os.path.join(dinput,'twi.tiff')
         self.fname_slope          = os.path.join(dinput,'slope.tiff')
-        self.fname_flow_acc       = os.path.join(dinput,'flow_acc_ncells.tiff')
+        self.fname_flow_acc       = os.path.join(dinput,'flow_acc_sca.tiff')
         self.fname_dem            = os.path.join(dinput,'dem.tiff')      
         self.fname_dem_breached   = os.path.join(dinput,'dem_breached.tiff') 
         self.fname_percinundated  = os.path.join(doutput,"".join(['percent_inundated_grid_',dstr,'.tiff']))
@@ -36,7 +36,7 @@ class twtfoliummap(folium.Map):
         self.fname_nonperennial   = os.path.join(doutput,"".join(['nonperennial_strms_',dstr,'.tiff']))
         self.fname_perennial      = os.path.join(doutput,"".join(['perennial_strms_',dstr,'.tiff']))
 
-    def add_transmissivity(self,namelist:twtnamelist.Namelist):
+    def add_transmissivity(self):
         """Add transmissivity data to self"""
         if not os.path.isfile(self.fname_transmissivity): 
             sys.exit('ERROR _add_transmissivity could not find '+self.fname_transmissivity)
@@ -44,7 +44,7 @@ class twtfoliummap(folium.Map):
                       fname=self.fname_transmissivity,
                       cmap=branca.colormap.linear.viridis)
 
-    def add_twi(self,namelist:twtnamelist.Namelist):
+    def add_twi(self):
         """Add topological wetness index (TWI) data to self"""
         if not os.path.isfile(self.fname_twi): 
             sys.exit('ERROR add_twi could not find '+self.fname_twi)
@@ -52,7 +52,7 @@ class twtfoliummap(folium.Map):
                       fname=self.fname_twi,
                       cmap=branca.colormap.linear.viridis)
 
-    def add_slope(self,namelist:twtnamelist.Namelist):
+    def add_slope(self):
         """Add slope data to self"""
         if not os.path.isfile(self.fname_slope): 
             sys.exit('ERROR add_slope could not find '+self.fname_slope)
@@ -60,7 +60,7 @@ class twtfoliummap(folium.Map):
                       fname=self.fname_slope,
                       cmap=branca.colormap.linear.Greys_07)
 
-    def add_facc(self,namelist:twtnamelist.Namelist):
+    def add_facc(self):
         """Add flow accumulation data to self"""
         if not os.path.isfile(self.fname_flow_acc): 
             sys.exit('ERROR add_facc could not find '+self.fname_flow_acc)
@@ -68,7 +68,7 @@ class twtfoliummap(folium.Map):
                       fname=self.fname_flow_acc,
                       cmap=branca.colormap.linear.viridis)
 
-    def add_dem(self,namelist:twtnamelist.Namelist):
+    def add_dem(self):
         """Add dems to self"""
         if not os.path.isfile(self.fname_dem):          
             sys.exit('ERROR get_fmap_dem could not find '+self.fname_dem)
@@ -107,7 +107,7 @@ class twtfoliummap(folium.Map):
         if not os.path.isfile(fname): 
             sys.exit(f'ERROR add_nonperennial_strm_classification could not find {fname}')
         cmap = branca.colormap.linear.Blues_07
-        self._add_grid(name='WTD-TWI Non-perennial ({namelist.options.name_resample_method})',
+        self._add_grid(name=f'WTD-TWI Non-perennial ({namelist.options.name_resample_method})',
                         fname=fname,
                         cmap=cmap)
                 
@@ -118,7 +118,7 @@ class twtfoliummap(folium.Map):
             sys.exit(f'ERROR add_perennial_strm_classification could not find {fname}')
         cmap = branca.colormap.LinearColormap(['white','red'], vmin=0, vmax=1)
         if os.path.isfile(fname):
-            self._add_grid(name='WTD-TWI Perennial ({namelist.options.name_resample_method})',
+            self._add_grid(name=f'WTD-TWI Perennial ({namelist.options.name_resample_method})',
                             fname=fname,
                             cmap=cmap)
         html_legend = """
@@ -201,7 +201,7 @@ class twtfoliummap(folium.Map):
                 ).add_to(shpfg)
         shpfg.add_to(self)
 
-    def add_texture(self,namelist:twtnamelist.Namelist):
+    def add_texture(self):
         """Add soil texture data to self"""
         fname = self.fname_soil_texture
         if not os.path.isfile(fname): 
@@ -249,7 +249,7 @@ class twtfoliummap(folium.Map):
         self.fit_bounds([[domain.bounds.miny.iloc[0], domain.bounds.minx.iloc[0]],
                       [domain.bounds.maxy.iloc[0], domain.bounds.maxx.iloc[0]]])
         
-    def _add_nhd(self,namelist:twtnamelist.Namelist):
+    def _add_nhd(self):
         """Add nhd boundary to self"""
         fname = self.fname_nhd
         if not os.path.isfile(fname): 
