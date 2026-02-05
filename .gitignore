@@ -173,3 +173,7 @@ examples/al_appalachian_plateaus/input
 examples/al_appalachian_plateaus/output
 examples/al_appalachian_plateaus/execution/cache
 examples/al_appalachian_plateaus/visualization/cache
+examples/north_fork_kentucky_river/input
+examples/north_fork_kentucky_river/output
+examples/north_fork_kentucky_river/execution/cache
+examples/north_fork_kentucky_river/visualization/cache
