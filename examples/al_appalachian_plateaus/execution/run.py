@@ -20,6 +20,6 @@ if __name__ == '__main__':
     errmsgs = str()
     for i in range(len(results)):
         if results[i] is not None: 
-            errmsgs += f'ERROR {twtmain.__name__} failed for domain {args[i]["domain"].iloc[0]["domain_id"]} with message:\n{results[i]}\n\n'
+            errmsgs += f'WARNING {twtmain.__name__} failed for domain {args[i]["domain"].iloc[0]["domain_id"]} with message:\n{results[i]}\n\n'
     if len(errmsgs) > 0:
         print(errmsgs)
