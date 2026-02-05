@@ -29,7 +29,7 @@ def _set_domain(namelist:twtnamelist.Namelist):
                     domain.to_file(namelist.fnames.domain, driver='GPKG')
                     return
                 else:
-                    colnam = f'huc{domain_id}'
+                    colnam = f'huc{len(domain_id)}'
                     domain = pygeohydro.WBD(colnam).byids(field=colnam,
                                                           fids =domain_id)
                     domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 

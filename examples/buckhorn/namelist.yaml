@@ -22,4 +22,4 @@ facc_strm_threshold: 1000
 #
 # hf_hydrodata credentials https://hf-hydrodata.readthedocs.io/en/latest/getting_started.html#creating-a-hydrogen-api-account
 hf_hydrodata_un: 'evenson.grey@epa.gov'
-hf_hydrodata_pin: ''
+hf_hydrodata_pin: '2234'

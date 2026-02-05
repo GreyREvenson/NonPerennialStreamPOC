@@ -15,14 +15,14 @@ verbose: True
 start_date: '2002-10-01'
 #
 # end date for analysis - must be within parflow simulation period
-end_date: '2002-10-8'
+end_date: '2006-09-30'
 #
 # threshold for stream network identification via flow accumulation calculation - must be integer -- notes: 500,1000,5000,10000,50000,100000
 facc_strm_threshold: 1000
 #
 # hf_hydrodata credentials https://hf-hydrodata.readthedocs.io/en/latest/getting_started.html#creating-a-hydrogen-api-account
 hf_hydrodata_un: 'evenson.grey@epa.gov'
-hf_hydrodata_pin: ''
+hf_hydrodata_pin: '2234'
 
 write_wtd_mean_resampled: False
 
