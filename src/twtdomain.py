@@ -10,27 +10,36 @@ def _set_domain(namelist:twtnamelist.Namelist):
     """Set domain"""
     if namelist.options.verbose: print('calling _set_domain_boundary')
     if not os.path.isfile(namelist.fnames.domain) or namelist.options.overwrite:
-        if len(str(namelist.options.domain_hucid)) > 0:
-            if namelist.options.verbose: print(f'  setting domain from domain_hucid {namelist.options.domain_hucid}')
+        domain_id     = str(namelist.options.domain_hucid)
+        huc_break_lvl = namelist.options.huc_break_lvl
+        if len(str(domain_id)) > 0:
             try:
-                if isinstance(namelist.options.huc_break_lvl,int) and namelist.options.huc_break_lvl in (2,4,6,8,10,12): # override if break level specified
-                    lvl    = namelist.options.huc_break_lvl
-                    colnam = f'huc{lvl}'
-                    domain = pygeohydro.watershed.huc_wb_full(lvl)
-                    domain = domain[domain[colnam].str.startswith(namelist.options.domain_hucid)]
+                if namelist.options.verbose: print(f'setting domain from domain_hucid {domain_id}')
+                if (isinstance(huc_break_lvl,int) and
+                    huc_break_lvl in (2,4,6,8,10,12) and 
+                    huc_break_lvl > len(str(domain_id))):
+                    colnam = f'huc{huc_break_lvl}'
+                    hucs   = pygeohydro.WBD(colnam) 
+                    ids_all = hucs.bysql("1=1", return_geom=False)
+                    ids_all = ids_all[colnam].tolist()
+                    ids    = [id for id in ids_all if id.startswith(domain_id)]
+                    domain = hucs.byids(colnam, ids, return_geom=True)
+                    domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
+                    domain = domain.rename(columns = {colnam : 'domain_id'})
+                    domain.to_file(namelist.fnames.domain, driver='GPKG')
+                    return
                 else:
-                    lvl    = int(len(namelist.options.domain_hucid))
-                    colnam = f'huc{lvl}'
+                    colnam = f'huc{domain_id}'
                     domain = pygeohydro.WBD(colnam).byids(field=colnam,
-                                                          fids=[namelist.options.domain_hucid])
-                domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
-                domain = domain.rename(columns = {colnam : 'domain_id'})
-                domain.to_file(namelist.fnames.domain, driver='GPKG')
-                return
+                                                          fids =domain_id)
+                    domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
+                    domain = domain.rename(columns = {colnam : 'domain_id'})
+                    domain.to_file(namelist.fnames.domain, driver='GPKG')
+                    return
             except Exception as e_id:
                 sys.exit(f'ERROR _set_domain_boundary could not set domain from domain_hucid error {e_id}')
         elif len(namelist.options.domain_bbox) == 4:
-            if namelist.options.verbose: print(f'  setting domain from domain_bbox {namelist.options.domain_bbox}')
+            if namelist.options.verbose: print(f'setting domain from domain_bbox {namelist.options.domain_bbox}')
             try:
                 geom = shapely.geometry.box(namelist.options.domain_bbox[0],
                                             namelist.options.domain_bbox[1],

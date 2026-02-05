@@ -161,7 +161,15 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-examples/buckhorn/inputs/*
-examples/buckhorn/outputs/*
+examples/buckhorn/input
+examples/buckhorn/output
 examples/buckhorn/execution/cache
 examples/buckhorn/visualization/cache
+examples/conus1/input
+examples/conus1/output
+examples/conus1/execution/cache
+examples/conus1/visualization/cache
+examples/al_appalachian_plateaus/input
+examples/al_appalachian_plateaus/output
+examples/al_appalachian_plateaus/execution/cache
+examples/al_appalachian_plateaus/visualization/cache

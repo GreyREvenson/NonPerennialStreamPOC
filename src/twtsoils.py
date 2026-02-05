@@ -1,29 +1,35 @@
-import os,sys,numpy,pandas,geopandas,rasterio,soiltexture,twtnamelist,multiprocessing,twtutils,soildb
+import os,numpy,geopandas,rasterio,soiltexture,soildb,asyncio,multiprocessing,twtnamelist
 from urllib import response
-import asyncio
 
-def set_soils_main(namelist:twtnamelist.Namelist):
-    """Get soil texture and transmissivity data for domain"""
-    if namelist.options.verbose: print('calling set_soils_main')
-    domain = geopandas.read_file(namelist.fnames.domain)
-    args = list(zip([domain.iloc[[i]] for i in range(len(domain))],
-                    [namelist.options.overwrite] * len(domain),
-                    [namelist.options.verbose] * len(domain)))
+def set_soil_transmissivity(dt:dict):
+    e = _set_soil_transmissivity(dt)
+    return e
+
+def set_soil_texture(args:list,namelist:twtnamelist.Namelist):
     if len(args) == 1: 
-        _set_soil_texture_async_wrapper(*args[0]) # run directly if only one domain
+        _set_soil_texture_async_wrapper(args[0])
     else: 
-        with multiprocessing.Pool() as pool: pool.starmap(_set_soil_texture_async_wrapper, args) # _set_soil_texture is async so needs special handling for multiprocessing. don't use twtutils.call_func here
-    twtutils.call_func(_set_soil_transmissivity, args, namelist)
+        if namelist.options.pp and len(args) > 1:
+            cc = min(namelist.options.core_count, len(args))
+            with multiprocessing.Pool(processes=cc) as pool:
+                results = [pool.apply_async(_set_soil_texture_async_wrapper, (arg,)) for arg in args]
+                results = [res.get() for res in results]
+        else:
+            results = [_set_soil_texture(arg) for arg in args]
 
-def _set_soil_texture_async_wrapper(domain, overwrite, verbose):
+def _set_soil_texture_async_wrapper(dt:dict):
     """async wrapper for _set_soil_texture - required for multiprocessing"""
-    return asyncio.run(_set_soil_texture(domain, overwrite, verbose))
+    return asyncio.run(_set_soil_texture(dt))
 
-async def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
+async def _set_soil_texture(dt:dict):
     ### TODO: verbose isn't printing inside async function when called from multiprocessing pool, or maybe this is IDE related?
-    if verbose: print(f'calling _set_soil_texture for domain {domain.iloc[0]['domain_id']}',flush=True)
     try:
+        domain    = dt['domain']
+        overwrite = dt['overwrite']
+        verbose   = dt['verbose']
         fname_texture = os.path.join(domain.iloc[0]['input'],'soil_texture.gpkg')
+        if verbose: 
+            print(f'calling _set_soil_texture for domain {domain.iloc[0]['domain_id']}',flush=True)
         if not os.path.isfile(fname_texture) or overwrite:
             response = await soildb.spatial_query(geometry=domain.to_crs(epsg=4326).geometry.union_all().wkt,
                                             table="mupolygon",
@@ -60,12 +66,16 @@ async def _set_soil_texture(domain:geopandas.GeoDataFrame,overwrite:bool,verbose
     except Exception as e:
         return e
 
-def _set_soil_transmissivity(domain:geopandas.GeoDataFrame,overwrite:bool,verbose:bool):
-    if verbose: print(f'calling _set_soil_transmissivity for domain {domain.iloc[0]['domain_id']}')
+def _set_soil_transmissivity(dt:dict):
     try:
+        domain               = dt['domain']
+        overwrite            = dt['overwrite']
+        verbose              = dt['verbose']
         fname_texture        = os.path.join(domain.iloc[0]['input'],'soil_texture.gpkg')
         fname_dem            = os.path.join(domain.iloc[0]['input'],'dem.tiff')
         fname_transmissivity = os.path.join(domain.iloc[0]['input'],'soil_transmissivity.tiff')
+        if verbose: 
+            print(f'calling _set_soil_transmissivity for domain {domain.iloc[0]['domain_id']}',flush=True)
         if not os.path.isfile(fname_transmissivity) or overwrite:
             dt_transmissivity = {'clay heavy'    :3.2,
                                 'silty clay'     :3.1,

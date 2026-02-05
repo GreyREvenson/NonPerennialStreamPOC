@@ -28,9 +28,10 @@ class Namelist:
         facc_strm_threshold     = 0
         pp                      = False
         core_count              = ''
-        write_resampled_wtd     = False
+        write_wtd_mean_resampled = False
         hf_hydrodata_un         = ''
         hf_hydrodata_pin        = ''
+        dem_rez                 = None
 
     def __init__(self,filename:str):
         self._init_vars()
@@ -211,5 +212,20 @@ class Namelist:
         if name_var in userinput:
             try:
                 self.options.hf_hydrodata_pin = userinput[name_var]
+            except ValueError:
+                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
+        #
+        #
+        name_var = 'write_wtd_mean_resampled'
+        if name_var in userinput and str(userinput[name_var]).upper().find('TRUE') != -1:
+            self.options.write_wtd_mean_resampled = True
+        else:
+            self.options.write_wtd_mean_resampled = False
+        #
+        #
+        name_var = 'dem_rez'
+        if name_var in userinput:
+            try:
+                self.options.dem_rez = float(userinput[name_var])
             except ValueError:
                 sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')

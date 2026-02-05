@@ -1,51 +1,73 @@
 
-import os,numpy,rasterio,twtnamelist,multiprocessing,geopandas,datetime,twtutils
+import os,numpy,rasterio,shutil,datetime,zipfile,geopandas
 
-def calc_parflow_inundation(namelist:twtnamelist.Namelist):
-    """Calculate inundation using ParFlow simulations"""
-    if namelist.options.verbose: print('calling calc_parflow_inundation')
-    _calc_inundation_main(namelist)
-    _calc_parflow_inundation_summary(namelist)
+def calc_inundation(dt:dict):
+    e = _calc_inundation(dt)
+    if e is not None: return e
+    e = _calc_summary_perc_inundated(dt)
+    if e is not None: return e
+    e = _calc_strm_permanence(dt)
+    if e is not None: return e
+    e = _zip_iundation(dt)
+    return e
 
-def _calc_parflow_inundation_summary(namelist:twtnamelist.Namelist):
-    """Calculate summary grids"""
-    if namelist.options.verbose: print('calling _calc_parflow_inundation_summary')
-    _calc_summary_perc_inundated_main(namelist)
-    _calc_strm_permanence_main(namelist)
-
-def _calc_inundation_main(namelist:twtnamelist.Namelist):
-    if namelist.options.verbose: print('calling _calc_inundation_main')
-    domain = geopandas.read_file(namelist.fnames.domain)
-    args = list(zip([domain.iloc[[i]]                      for i in range(len(domain))],
-                    [namelist.time.datetime_dim[0]]        * len(domain),
-                    [namelist.time.datetime_dim[-1]]       * len(domain),
-                    [namelist.options.write_resampled_wtd] * len(domain),
-                    [namelist.options.overwrite]           * len(domain),
-                    [namelist.options.verbose]             * len(domain)))
-    twtutils.call_func(_calc_inundation,args,namelist)
-
-def _calc_inundation(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,write_wtd_mean_flag:bool,overwrite:bool,verbose:bool):
-    """Calculate inundation using TOPMODEL-based approach from Zhang et al. (2016)"""
-    #write_wtd_mean_flag: if True, write resampled mean WTD grids to domain wtd_resampled directory
-    if verbose: print(f'calling _calc_inundation for domain {domain.iloc[0]['domain_id']}',flush=True)
+def _zip_iundation(dt):
+    domain = dt['domain']
+    dirraw = os.path.join(domain.iloc[0]['output'],'raw')
     try:
-        calc_flag = False
-        idt       = dt_start
-        diroutraw = os.path.join(domain.iloc[0]['output'],'raw')
-        if not os.path.isdir(diroutraw): os.makedirs(diroutraw, exist_ok=True)
-        while idt <= dt_end:
-            dt_str      = idt.strftime('%Y%m%d')
-            fname_inund = os.path.join(diroutraw,f'inundation_{dt_str}.tiff')
-            if not os.path.isfile(fname_inund) or overwrite:
-                calc_flag = True
-                break
-            idt += datetime.timedelta(days=1)
+        if os.path.isdir(dirraw) and len(os.listdir(dirraw)) > 0:
+            shutil.make_archive(dirraw, 'zip', dirraw)
+            shutil.rmtree(dirraw)
+        return None
+    except Exception as e:
+        return e
+
+def _check_exist(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime):
+    raw    = os.path.join(domain.iloc[0]['output'],'raw')
+    rawzip = os.path.join(domain.iloc[0]['output'],'raw.zip')
+    inraw, inrawzip = True, True
+    idt = dt_start
+    while idt <= dt_end:
+        dt_str = idt.strftime('%Y%m%d')
+        fname  = f'inundation_{dt_str}.tiff'
+        if not os.path.isfile(os.path.join(raw,fname)):
+            inraw = False
+            break
+        idt += datetime.timedelta(days=1)
+    if os.path.isfile(rawzip):
+        with zipfile.ZipFile(rawzip, 'r') as rawarchive:
+            zipnl = rawarchive.namelist()
+            idt = dt_start
+            while idt <= dt_end:
+                dt_str = idt.strftime('%Y%m%d')
+                fname  = f'inundation_{dt_str}.tiff'
+                if fname not in zipnl:
+                    inrawzip = False
+                    break
+                idt += datetime.timedelta(days=1)
+    else: inrawzip = False
+    if inraw or inrawzip: return False
+    else:                 return True
+    
+def _calc_inundation(dt:dict):
+    try:
+        domain              = dt['domain']
+        dt_start            = dt['dt_start']
+        dt_end              = dt['dt_end']
+        verbose             = dt['verbose']
+        overwrite           = dt['overwrite']
+        write_wtd_mean_resampled = dt['write_wtd_mean_resampled'] #write_wtd_mean_flag: if True, write resampled mean WTD grids to domain wtd_resampled directory
+        if verbose: print(f'calling _calc_inundation for domain {domain.iloc[0]['domain_id']}',flush=True)
+        if overwrite: calc_flag = True
+        else:         calc_flag = _check_exist(domain,dt_start,dt_end)
         if calc_flag:
+            diroutraw   = os.path.join(domain.iloc[0]['output'],'raw')
             dirinput    = domain.iloc[0]['input']
             twi_local   = rasterio.open(os.path.join(dirinput,'twi.tiff'                ),'r').read(1)
             twi_mean    = rasterio.open(os.path.join(dirinput,'twi_mean.tiff'           ),'r').read(1)
             trans_decay = rasterio.open(os.path.join(dirinput,'soil_transmissivity.tiff'),'r').read(1)
             domain_mask = rasterio.open(os.path.join(dirinput,'domain_mask.tiff'        ),'r').read(1)
+            if not os.path.isdir(diroutraw): os.makedirs(diroutraw, exist_ok=True)
             with rasterio.open(os.path.join(dirinput,'dem.tiff'),'r') as riods_dem:
                 _dst_crs    = riods_dem.crs
                 _dst_shape  = riods_dem.shape
@@ -79,10 +101,10 @@ def _calc_inundation(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt
                                                 'nodata'    : 0})
                         with rasterio.open(fname_inund,'w',**inun_local_meta) as riods_wtd_local:
                             riods_wtd_local.write(inun_local,1)
-                        if write_wtd_mean_flag:
-                            diroutrmpled = os.path.join(domain.iloc[0]['output'],'wtd','resampled')
-                            if not os.path.isdir(diroutrmpled): os.makedirs(diroutrmpled, exist_ok=True)
-                            fname_wtd_mean_warped = os.path.join(diroutrmpled,f'wtd_{dt_str}.tiff')
+                        if write_wtd_mean_resampled:
+                            resampled_dir = os.path.join(domain.iloc[0]['input'],'wtd','resampled')
+                            if not os.path.isdir(resampled_dir): os.makedirs(resampled_dir, exist_ok=True)
+                            fname_wtd_mean_warped = os.path.join(resampled_dir,f'wtd_{dt_str}.tiff')
                             if not os.path.isfile(fname_wtd_mean_warped) or overwrite:
                                 with rasterio.open(fname_wtd_mean_warped,'w',**_dst_meta) as riods_wtd_mean:
                                     riods_wtd_mean.write(wtd_mean,1)
@@ -108,19 +130,15 @@ def _calc_inundation_time_i(wtd_mean,twi_local,twi_mean,f,domain_mask):
     wtd_local = numpy.where(wtd_local>=0,1,numpy.nan)                                     # give value of 1 where local water table depth is >= 0 (i.e. at or above the surface), otherwise give a NaN value
     return wtd_local
 
-def _calc_strm_permanence_main(namelist:twtnamelist.Namelist):
-    if namelist.options.verbose: print('calling _calc_strm_permanence_main')
-    domain = geopandas.read_file(namelist.fnames.domain)
-    args = list(zip([domain.iloc[[i]]                for i in range(len(domain))],
-                    [namelist.time.datetime_dim[0]]  * len(domain),
-                    [namelist.time.datetime_dim[-1]] * len(domain),
-                    [namelist.options.overwrite]     * len(domain),
-                    [namelist.options.verbose]       * len(domain)))
-    twtutils.call_func(_calc_strm_permanence,args,namelist)
-
-def _calc_strm_permanence(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool,verbose:bool):
-    if verbose: print(f'calling _calc_strm_permanence for domain {domain.iloc[0]['domain_id']}',flush=True)
+def _calc_strm_permanence(dt:dict):
     try:
+        domain = dt['domain']
+        dt_start  = dt['dt_start']
+        dt_end    = dt['dt_end']
+        overwrite = dt['overwrite']
+        verbose   = dt['verbose']
+        if verbose: 
+            print(f'calling _calc_strm_permanence for domain {domain.iloc[0]['domain_id']}',flush=True)
         tstr      = f'{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}'
         diroutsum = os.path.join(domain.iloc[0]['output'],'summary')
         if not os.path.isdir(diroutsum): os.makedirs(diroutsum, exist_ok=True)
@@ -143,7 +161,6 @@ def _calc_strm_permanence(domain:geopandas.GeoDataFrame,dt_start:datetime.dateti
                          'nodata':0})
             with rasterio.open(fname_p, "w", **meta) as riods_out:
                 riods_out.write(strms_p,1)
-            test = numpy.where((perc_inund>0)&(perc_inund<100),1,0)
             strms_np = numpy.where((perc_inund>0)&(perc_inund<100),perc_inund,numpy.nan)
             strms_np = numpy.where(strms==1,strms_np,numpy.nan)
             meta.update({'dtype':numpy.float32,
@@ -154,28 +171,23 @@ def _calc_strm_permanence(domain:geopandas.GeoDataFrame,dt_start:datetime.dateti
     except Exception as e:
         return e
 
-def _calc_summary_perc_inundated_main(namelist:twtnamelist.Namelist):
-    """Calculate summary grid of inundated area"""
-    if namelist.options.verbose: print('calling _calc_summary_perc_inundated_main')
-    domain = geopandas.read_file(namelist.fnames.domain)
-    args = list(zip([domain.iloc[[i]]                for i in range(len(domain))],
-                    [namelist.time.datetime_dim[0]]  * len(domain),
-                    [namelist.time.datetime_dim[-1]] * len(domain),
-                    [namelist.options.overwrite]     * len(domain),
-                    [namelist.options.verbose]       * len(domain)))
-    twtutils.call_func(_calc_summary_perc_inundated,args,namelist)
-
-def _calc_summary_perc_inundated(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime,overwrite:bool,verbose:bool):
-    if verbose: print(f'calling _calc_summary_perc_inundated for domain {domain.iloc[0]['domain_id']}')
-    domain_mask = rasterio.open(os.path.join(domain.iloc[0]['input'],'domain_mask.tiff'),'r').read(1)
-    diroutraw = os.path.join(domain.iloc[0]['output'],'raw')
-    diroutsum  = os.path.join(domain.iloc[0]['output'],'summary')
+def _calc_summary_perc_inundated(dt:dict):
+    domain    = dt['domain']
+    dt_start  = dt['dt_start']
+    dt_end    = dt['dt_end']
+    overwrite = dt['overwrite']
+    verbose   = dt['verbose']
+    if verbose: 
+        print(f'calling _calc_summary_perc_inundated for domain {domain.iloc[0]['domain_id']}',flush=True)
+    diroutraw    = os.path.join(domain.iloc[0]['output'],'raw')
+    diroutsum    = os.path.join(domain.iloc[0]['output'],'summary')
     if not os.path.isdir(diroutsum): os.makedirs(diroutsum, exist_ok=True)
     fname_output = os.path.join(diroutsum,
                                 f'percent_inundated_grid_{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}.tiff')
     if not os.path.isfile(fname_output) or overwrite:
-        sumgrid = numpy.zeros(shape=domain_mask.shape,dtype=numpy.int32)
-        idt     = dt_start
+        domain_mask = rasterio.open(os.path.join(domain.iloc[0]['input'],'domain_mask.tiff'),'r').read(1)
+        sumgrid     = numpy.zeros(shape=domain_mask.shape,dtype=numpy.int32)
+        idt         = dt_start
         while idt < dt_end:
             dt_str          = idt.strftime('%Y%m%d')
             fname_inund_dti = os.path.join(diroutraw,
