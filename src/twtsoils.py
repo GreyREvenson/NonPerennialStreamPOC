@@ -74,9 +74,11 @@ def _set_soil_transmissivity(dt:dict):
         fname_texture        = os.path.join(domain.iloc[0]['input'],'soil_texture.gpkg')
         fname_dem            = os.path.join(domain.iloc[0]['input'],'dem.tiff')
         fname_transmissivity = os.path.join(domain.iloc[0]['input'],'soil_transmissivity.tiff')
+        fname_domain_mask    = os.path.join(domain.iloc[0]['input'],'domain_mask.tiff')
         if verbose: 
             print(f'calling _set_soil_transmissivity for domain {domain.iloc[0]['domain_id']}',flush=True)
         if not os.path.isfile(fname_transmissivity) or overwrite:
+            domain_mask = rasterio.open(fname_domain_mask,'r').read(1)
             dt_transmissivity = {'clay heavy'    :3.2,
                                 'silty clay'     :3.1,
                                 'clay'           :2.8,
@@ -114,6 +116,10 @@ def _set_soil_transmissivity(dt:dict):
                              "transform" : dem.transform,
                              "dtype"     : rasterio.float32,
                              "nodata"    : numpy.nan})
+                count_nan = numpy.sum((transm_data == numpy.nan) & (domain_mask==1))
+                if count_nan > 0:
+                    print(f'Warning: {count_nan/numpy.sum(domain_mask==1)} pixels within the domain have NaN transmissivity values. Filling with mean transmissivity value {numpy.nanmean(transm_data)}.', flush=True)
+                    transm_data = numpy.where((transm_data == numpy.nan) & (domain_mask==1), numpy.nanmean(transm_data), transm_data)
                 with rasterio.open(fname_transmissivity, 'w', **meta) as dst:
                     dst.write(transm_data,indexes=1)
         return None
