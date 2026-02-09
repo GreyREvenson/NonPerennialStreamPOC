@@ -37,7 +37,6 @@ class Namelist:
         self._init_vars()
         self._set_user_inputs(filename)
         self._set_names()
-        self._make_dirs()
 
     def _init_vars(self):
         self.dirnames = Namelist.DirectoryNames()
@@ -56,10 +55,6 @@ class Namelist:
     def _set_f_names(self):
         self.fnames.domain              = os.path.join(self.dirnames.input, 'domain.gpkg')
 
-    def _make_dirs(self):
-        for d in self.dirnames.__dict__:
-            os.makedirs(self.dirnames.__dict__[d],exist_ok=True)
-
     def _read_inputyaml(self,fname:str):
         self.fnames.namlistyaml = fname
         with open(self.fnames.namlistyaml,'r') as yamlf:
@@ -75,15 +70,8 @@ class Namelist:
         userinput = self._read_inputyaml(fname_yaml_input)
         #
         #
-        name_var = 'project_directory'
-        if name_var not in userinput:
-            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
-        if not os.path.isdir(userinput[name_var]):
-            try:
-                os.mkdir(userinput[name_var])
-            except OSError as e:
-                sys.exit(f'ERROR could not create project directory {userinput[name_var]}: {e}')
-        self.dirnames.project = os.path.abspath(userinput[name_var])
+        self.dirnames.project = os.path.dirname(os.path.abspath(fname_yaml_input))
+        print(f'project directory set to: {self.dirnames.project}')
         #
         #
         names_domain = ['domain_huc','domain_latlon','domain_bbox']

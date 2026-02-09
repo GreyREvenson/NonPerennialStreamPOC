@@ -1,7 +1,3 @@
-# 
-# Main project directory
-project_directory: '..\'
-#
 # HUC id to define the domain
 domain_latlon: [34.968617, -86.165017]
 #
