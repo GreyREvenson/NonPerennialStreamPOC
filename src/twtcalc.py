@@ -1,15 +1,6 @@
 
-import os,numpy,rasterio,shutil,datetime,zipfile,geopandas
-
-def calc_inundation(dt:dict):
-    e = _calc_inundation(dt)
-    if e is not None: return e
-    e = _calc_summary_perc_inundated(dt)
-    if e is not None: return e
-    e = _calc_strm_permanence(dt)
-    if e is not None: return e
-    e = _zip_iundation(dt)
-    return e
+import os,numpy,rasterio,shutil,datetime,zipfile,geopandas,rioxarray
+from rasterio.enums import Resampling
 
 def _zip_iundation(dt):
     domain = dt['domain']
@@ -22,34 +13,61 @@ def _zip_iundation(dt):
     except Exception as e:
         return e
 
-def _check_exist(domain:geopandas.GeoDataFrame,dt_start:datetime.datetime,dt_end:datetime.datetime):
-    raw    = os.path.join(domain.iloc[0]['output'],'raw')
-    rawzip = os.path.join(domain.iloc[0]['output'],'raw.zip')
-    inraw, inrawzip = True, True
+def _check_exist(inundation_out_dir:str,dt_start:datetime.datetime,dt_end:datetime.datetime):
     idt = dt_start
     while idt <= dt_end:
         dt_str = idt.strftime('%Y%m%d')
         fname  = f'inundation_{dt_str}.tiff'
-        if not os.path.isfile(os.path.join(raw,fname)):
-            inraw = False
-            break
+        if not os.path.isfile(os.path.join(inundation_out_dir,fname)):
+            return True
         idt += datetime.timedelta(days=1)
-    if os.path.isfile(rawzip):
-        with zipfile.ZipFile(rawzip, 'r') as rawarchive:
-            zipnl = rawarchive.namelist()
-            idt = dt_start
-            while idt <= dt_end:
-                dt_str = idt.strftime('%Y%m%d')
-                fname  = f'inundation_{dt_str}.tiff'
-                if fname not in zipnl:
-                    inrawzip = False
-                    break
-                idt += datetime.timedelta(days=1)
-    else: inrawzip = False
-    if inraw or inrawzip: return False
-    else:                 return True
+    return False
     
-def _calc_inundation(dt:dict):
+def calculate_inundation(**kwargs):
+    dt_start           = kwargs.get('dt_start',                 None)
+    dt_end             = kwargs.get('dt_end',                   None)
+    wtd_raw_dir        = kwargs.get('wtd_raw_dir',              None)
+    wtd_resampled_dir  = kwargs.get('wtd_resampled_dir',        None)
+    inundation_out_dir = kwargs.get('inundation_out_dir',       None)
+    fname_twi          = kwargs.get('fname_twi',                None)
+    fname_twi_mean     = kwargs.get('fname_twi_mean',           None)
+    fname_soil_trans   = kwargs.get('fname_soil_transmissivity',None)
+    verbose            = kwargs.get('verbose',                  False)
+    overwrite          = kwargs.get('overwrite',                False)
+    if verbose: print(f'calling calculate_inundation')
+    if overwrite: calc_flag = True
+    else:         calc_flag = _check_exist(inundation_out_dir,dt_start,dt_end)
+    if calc_flag:
+        if verbose: print(f' writing output to {inundation_out_dir}')
+        os.makedirs(inundation_out_dir, exist_ok=True)
+        twi         = rioxarray.open_rasterio(filename=fname_twi,masked=True).sel(band=1).load()
+        twi_mean    = rioxarray.open_rasterio(filename=fname_twi_mean,masked=True).sel(band=1).load()
+        soil_transm = rioxarray.open_rasterio(filename=fname_soil_trans,masked=True).sel(band=1).load()
+        idt         = dt_start
+        while idt <= dt_end:
+            dt_str             = idt.strftime('%Y%m%d')
+            fname_wtd_mean_raw = os.path.join(wtd_raw_dir,f'wtd_{dt_str}.tiff')
+            fname_inund        = os.path.join(inundation_out_dir,f'inundation_{dt_str}.tiff')
+            if not os.path.isfile(fname_wtd_mean_raw):
+                raise Exception(f'calculate_inundation could not find {fname_wtd_mean_raw}')
+            if not os.path.isfile(fname_inund) or overwrite:
+                with rioxarray.open_rasterio(fname_wtd_mean_raw,masked=True) as rioxds_wtd_raw, rioxarray.open_rasterio(fname_twi,masked=True) as rioxds_twi:
+                    rioxds_wtd_resampled = rioxds_wtd_raw.rio.reproject_match(rioxds_twi, 
+                                                                              resampling=Resampling.bilinear)
+                    inun_local = _calc_inundation_time_i(wtd_mean    = rioxds_wtd_resampled.sel(band=1),
+                                                         twi_local   = twi,
+                                                         twi_mean    = twi_mean,
+                                                         f           = soil_transm)
+                    inun_local.rio.to_raster(fname_inund,compress=True)
+                    if wtd_resampled_dir is not None:
+                        if not os.path.isdir(wtd_resampled_dir): os.makedirs(wtd_resampled_dir, exist_ok=True)
+                        fname_wtd_mean_warped = os.path.join(wtd_resampled_dir,f'wtd_{dt_str}.tiff')
+                        rioxds_wtd_resampled.rio.to_raster(fname_wtd_mean_warped,compress=True)
+            idt += datetime.timedelta(days=1)
+    else:
+        if verbose: print(f' found existing inundation calculations in {inundation_out_dir}')
+
+def _calc_inundation_old(dt:dict):
     try:
         domain              = dt['domain']
         dt_start            = dt['dt_start']
@@ -113,7 +131,7 @@ def _calc_inundation(dt:dict):
     except Exception as e:
         return e
 
-def _calc_inundation_time_i(wtd_mean,twi_local,twi_mean,f,domain_mask):
+def _calc_inundation_time_i(wtd_mean,twi_local,twi_mean,f):
     """Calculate inundation using 
     TOPMODEL-based equation - see Equation 3 of Zhang et al. (2016) (https://doi.org/10.5194/bg-13-1387-2016)
     Arguments:
@@ -121,13 +139,13 @@ def _calc_inundation_time_i(wtd_mean,twi_local,twi_mean,f,domain_mask):
         twi_local:   grid of local TWI values               (lambda sub l in equation 3 of Zhang et al.)
         twi_mean:    grid of mean TWI values                (lamda sub m in equation 3 of Zhang et al.)
         f:           grid of f parameter values             (f in equation 3 and table 1 of Zhang et al.)
-        domain_mask: grid of model domain                   (1=domain,0=not domain)
     Returns:
         wtd_local:   grid of local water table depth values (zeta sub l in equation 3 of Zhang et al.)
     """
     wtd_mean  = wtd_mean*(-1)                                                             # values must be negative so multiply by -1
-    wtd_local = numpy.where(domain_mask==1,(1/f)*(twi_local-twi_mean)+wtd_mean,numpy.nan) # calculate local water depth using equation 3 from Zhang et al. (2016) where domain_mask=1 (i.e., within the model domain), otherise give a NaN value 
-    wtd_local = numpy.where(wtd_local>=0,1,numpy.nan)                                     # give value of 1 where local water table depth is >= 0 (i.e. at or above the surface), otherwise give a NaN value
+    wtd_local = (1/f)*(twi_local-twi_mean)+wtd_mean   # calculate local water depth using equation 3 from Zhang et al. (2016) where domain_mask=1 (i.e., within the model domain), otherise give a NaN value 
+    wtd_local = wtd_local.where(wtd_local>=0,numpy.nan)  
+    wtd_local = wtd_local.where(wtd_local.isnull(), 1)                          # give value of 1 where local water table depth is >= 0 (i.e. at or above the surface), otherwise give a NaN value
     return wtd_local
 
 def _calc_strm_permanence(dt:dict):
@@ -171,35 +189,40 @@ def _calc_strm_permanence(dt:dict):
     except Exception as e:
         return e
 
-def _calc_summary_perc_inundated(dt:dict):
-    domain    = dt['domain']
-    dt_start  = dt['dt_start']
-    dt_end    = dt['dt_end']
-    overwrite = dt['overwrite']
-    verbose   = dt['verbose']
-    if verbose: 
-        print(f'calling _calc_summary_perc_inundated for domain {domain.iloc[0]['domain_id']}',flush=True)
-    diroutraw    = os.path.join(domain.iloc[0]['output'],'raw')
-    diroutsum    = os.path.join(domain.iloc[0]['output'],'summary')
-    if not os.path.isdir(diroutsum): os.makedirs(diroutsum, exist_ok=True)
-    fname_output = os.path.join(diroutsum,
+def calculate_summary_perc_inundated(**kwargs):
+    dt_start           = kwargs.get('dt_start',                 None)
+    dt_end             = kwargs.get('dt_end',                   None)
+    inundation_raw_dir = kwargs.get('inundation_raw_dir',       None)
+    inundation_sum_dir = kwargs.get('inundation_summary_dir',   None)
+    fname_dem          = kwargs.get('fname_dem',                None)
+    verbose            = kwargs.get('verbose',                  False)
+    overwrite          = kwargs.get('overwrite',                False)
+    if verbose: print(f'calling calculate_summary_perc_inundated')
+    if dt_start is None or not isinstance(dt_start,datetime.datetime) or dt_end is None or not isinstance(dt_end,datetime.datetime):
+        raise ValueError(f'calculate_summary_perc_inundated missing required arguments dt_start or dt_end or not valid datetime.datetime objects')
+    if inundation_raw_dir is None or not os.path.isdir(inundation_raw_dir):
+        raise ValueError(f'calculate_summary_perc_inundated missing required argument inundation_raw_dir or is not valid directory')
+    if inundation_sum_dir is None:
+        raise ValueError(f'calculate_summary_perc_inundated missing required argument inundation_summary_dir')
+    if fname_dem is None or not os.path.isfile(fname_dem):
+        raise ValueError(f'calculate_summary_perc_inundated missing required argument fname_dem is not a valid file')
+    os.makedirs(inundation_sum_dir, exist_ok=True)
+    fname_output = os.path.join(inundation_sum_dir,
                                 f'percent_inundated_grid_{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}.tiff')
     if not os.path.isfile(fname_output) or overwrite:
-        domain_mask = rasterio.open(os.path.join(domain.iloc[0]['input'],'domain_mask.tiff'),'r').read(1)
-        sumgrid     = numpy.zeros(shape=domain_mask.shape,dtype=numpy.int32)
-        idt         = dt_start
+        if verbose: print(f' writing summary percent inundation grid {fname_output}')
+        sumgrid = rioxarray.open_rasterio(filename=fname_dem,masked=True).sel(band=1).load()
+        sumgrid = sumgrid.where(sumgrid.isnull(),0)
+        idt     = dt_start
         while idt < dt_end:
             dt_str          = idt.strftime('%Y%m%d')
-            fname_inund_dti = os.path.join(diroutraw,
+            fname_inund_dti = os.path.join(inundation_raw_dir,
                                            f'inundation_{dt_str}.tiff')
-            inun_dti        = rasterio.open(fname_inund_dti,'r').read(1)
+            inun_dti        = rioxarray.open_rasterio(filename=fname_inund_dti,masked=True).sel(band=1).load()
             sumgrid        += inun_dti
             idt            += datetime.timedelta(days=1)
-        perc_inun = (sumgrid.astype(numpy.float64)/float((dt_end-dt_start).days))*100.
-        perc_inun = numpy.where(perc_inun==0.,numpy.nan,perc_inun)
-        perc_inun = perc_inun.astype(numpy.float32)
-        perc_inun_meta = rasterio.open(fname_inund_dti,'r').meta.copy()
-        perc_inun_meta.update({'dtype'  : numpy.float32,
-                               'nodata' : numpy.nan})
-        with rasterio.open(fname_output, "w", **perc_inun_meta) as riods_perc_inund:
-            riods_perc_inund.write(perc_inun,1)
+        perc_inun = (sumgrid/float((dt_end-dt_start).days))*100.
+        perc_inun = perc_inun.where(perc_inun>0.,numpy.nan)
+        perc_inun.rio.to_raster(fname_output,compress=True)
+    else:
+        if verbose: print(f' found existing summary percent inundated grid {fname_output}')

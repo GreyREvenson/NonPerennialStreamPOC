@@ -1,20 +1,19 @@
-import os,geopandas,pynhd,shapely
+import os,geopandas,pynhd
 
-def set_streams(dt:dict):
-    try:
-        domain    = dt['domain']
-        overwrite = dt['overwrite']
-        verbose   = dt['verbose']
-        if verbose: 
-            print(f'calling _set_streams for domain {domain.iloc[0]['domain_id']}',flush=True)
-        fname_out = os.path.join(domain.iloc[0]['input'],'nhd_hr.gpkg')
-        if not os.path.isfile(fname_out) or overwrite:
-            geom = shapely.ops.unary_union(domain['geometry'].to_list())
-            nhd = pynhd.NHDPlusHR("flowline").bygeom(geom   =domain.total_bounds,
-                                                     geo_crs=domain.crs.to_string())
-            nhd = nhd.to_crs(domain.crs)
-            nhd = geopandas.clip(nhd, geom)
-            nhd.to_file(fname_out, driver="GPKG")
-        return None
-    except Exception as e:
-        return e
+def set_streams(**kwargs):
+    domain        = kwargs.get('domain',        None)
+    fname_streams = kwargs.get('fname_streams', None)
+    verbose       = kwargs.get('verbose',       False)
+    overwrite     = kwargs.get('overwrite',     False)
+    if verbose: print('calling set_streams')
+    if domain is None or not isinstance(domain,geopandas.GeoDataFrame):
+        raise ValueError(f'set_streams missing required argument domain or is not valid geopandas.GeoDataFrame')
+    if not os.path.isfile(fname_streams) or overwrite:
+        if verbose: print(f' using pynhd to download NHDPlusHR flowlines - saving to {fname_streams}')
+        nhd = pynhd.NHDPlusHR("flowline").bygeom(geom   =domain.total_bounds,
+                                                 geo_crs=domain.crs.to_string())
+        nhd = nhd.to_crs(domain.crs)
+        nhd = geopandas.clip(nhd, domain.geometry.union_all())
+        nhd.to_file(fname_streams, driver="GPKG")
+    else:
+        if verbose: print(f' using existing NHD line file {fname_streams}')

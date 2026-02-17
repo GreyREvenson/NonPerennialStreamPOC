@@ -1,310 +1,230 @@
-import os,sys,numpy,py3dep,rasterio,whitebox,shapely
-from scipy.ndimage import uniform_filter
+import os
+import numpy
+import py3dep
+import geopandas
+import rioxarray
+from geocube.api.core import make_geocube
+from whitebox_workflows import WbEnvironment
 
-def calc_topo(dt:dict):
-    verbose = dt['verbose']
-    if verbose: 
-        print(f'calling calc_topo for domain {dt["domain"].iloc[0]["domain_id"]}',flush=True)
-    if os.path.isfile(dt['fname_dem_usr']):
-        e = _break_dem(dt)
-        if e is not None: return e
+def download_dem(**kwargs):
+    domain        = kwargs.get('domain',    None)
+    verbose       = kwargs.get('verbose',   False)
+    overwrite     = kwargs.get('overwrite', False)
+    dem_rez       = kwargs.get('dem_rez',   None)
+    fname_dem     = kwargs.get('fname_dem', None)
+    if verbose: print('download_dem')
+    if not isinstance(domain,geopandas.GeoDataFrame):
+        raise TypeError(f'download_dem domain argument is missing or is not type geopandas.geodataframe')
+    if fname_dem is None:
+        raise ValueError(f'download_dem missing required argument fname_dem')
+    if not os.path.isfile(fname_dem) or overwrite:
+        avail = py3dep.check_3dep_availability(bbox=tuple(domain.total_bounds),crs=domain.crs)
+        vals  = list()
+        for k in avail.keys():
+            try: vals.append(int(k.replace('m','')))
+            except: pass
+        if len(vals) == 0:
+            raise ValueError(f'download_dem 3dep could not find dem resolution')
+        rez = min(vals)
+        if dem_rez in vals: rez = dem_rez # override with user input if available
+        if verbose:
+            print(f' downloading dem ({str(rez)}m) using py3dep. saving to: {fname_dem}')
+        dem = py3dep.get_dem(geometry   = domain.geometry.union_all(),
+                             resolution = rez,
+                             crs        = domain.crs)
+        dem.rio.to_raster(fname_dem)
     else:
-        e = _download_dem(dt)
-        if e is not None: return e
-    e = _set_domain_mask(dt)
-    if e is not None: return e
-    e = _breach_dem(dt)
-    if e is not None:
-        e = _breach_dem_fill(dt)
-        if e is not None: return e
-    e = _calc_facc(dt)
-    if e is not None: return e
-    e = _calc_stream_mask(dt)
-    if e is not None: return e
-    e = _calc_slope(dt)
-    if e is not None: return e
-    e = _calc_twi(dt)
-    if e is not None: return e
-    e = _calc_mean_twi(dt)
-    return e
+        if verbose: print(f' using existing dem {fname_dem}')
 
-def _break_dem(dt:dict):
-    try:
-        domain             = dt['domain']
-        fname_dem_usr      = dt['fname_dem_usr']
-        overwrite          = dt['overwrite']
-        verbose            = dt['verbose']
-        fname_dem = os.path.join(domain.iloc[0]['input'],'dem.tiff')
-        if verbose: 
-            print(f'calling _break_dem for domain {domain.iloc[0]["domain_id"]}',flush=True)
-        if not os.path.isfile(fname_dem_usr):
-            return f'ERROR _break_dem could not find file {fname_dem_usr}'
-        with rasterio.open(fname_dem_usr,'r') as riods_dem:
-            domain = domain.to_crs('EPSG:5070')
-            domain.geometry = domain.geometry.buffer(distance=1000)
-            domain = domain.to_crs(riods_dem.crs)
-            dem_bbox = shapely.geometry.box(riods_dem.bounds.left,
-                                            riods_dem.bounds.bottom,
-                                            riods_dem.bounds.right,
-                                            riods_dem.bounds.top)
-            if not dem_bbox.contains(shapely.ops.unary_union(domain.iloc[0].geometry)):
-                return f'ERROR _break_dem domain is not covered by dem {fname_dem_usr}'
-            if not os.path.isfile(fname_dem) or overwrite:
-                masked_dem_array, masked_dem_transform = rasterio.mask.mask(dataset     = riods_dem, 
-                                                                            shapes      = [shapely.ops.unary_union(domain.iloc[0].geometry)], 
-                                                                            crop        = True, 
-                                                                            all_touched = True, 
-                                                                            filled      = False, 
-                                                                            nodata      = numpy.nan)
-                masked_dem_meta = riods_dem.meta.copy()
-                masked_dem_meta.update({"height"    : masked_dem_array.shape[1],
-                                        "width"     : masked_dem_array.shape[2],
-                                        "transform" : masked_dem_transform,
-                                        "nodata"    : numpy.nan,
-                                        "dtype"     : numpy.float32})
-                with rasterio.open(fname_dem,'w',**masked_dem_meta) as riods_masked_dem:
-                    riods_masked_dem.write(masked_dem_array[0],1)
-        return None
-    except Exception as e:
-        return e
+def set_domain_mask(**kwargs):
+    domain            = kwargs.get('domain',            None)
+    verbose           = kwargs.get('verbose',           False)
+    overwrite         = kwargs.get('overwrite',         False)
+    fname_domain_mask = kwargs.get('fname_domain_mask', None)
+    fname_dem         = kwargs.get('fname_dem',         None)
+    if verbose: print(f'set_domain_mask')
+    if not os.path.isfile(fname_dem):
+        raise ValueError(f'set_domain_mask could not find fname_dem {fname_dem}')
+    if not os.path.isfile(fname_domain_mask) or overwrite:
+        if verbose: print(f' creating {fname_domain_mask}')
+        with rioxarray.open_rasterio(fname_dem) as riox_ds_dem:
+            domain = domain.to_crs(riox_ds_dem.rio.crs)
+            domain = domain.dissolve()
+            domain = domain.drop(columns=[col for col in domain.columns if col not in ['geometry']])
+            domain['mask'] = 1
+            domain_mask = make_geocube(vector_data=domain,like=riox_ds_dem,measurements=['mask'])
+            domain_mask.rio.to_raster(fname_domain_mask)
+    else:
+        if verbose: print(f' using existing domain mask {fname_domain_mask}')
 
-def _download_dem(dt:dict):
-    try:
-        domain             = dt['domain']
-        dem_rez            = dt['dem_rez']
-        overwrite          = dt['overwrite']
-        verbose            = dt['verbose']
-        fname_dem = os.path.join(domain.iloc[0]['input'],'dem.tiff')
-        if verbose: print(f'calling _download_dem for domain {domain.iloc[0]['domain_id']}')
-        if not os.path.isfile(fname_dem) or overwrite:
-            domain_buf  = domain.to_crs('EPSG:5070').buffer(distance=1000).to_crs(domain.crs)
-            domain_geom = shapely.ops.unary_union(domain_buf.geometry)
-            avail       = py3dep.check_3dep_availability(bbox=tuple(domain_buf.total_bounds),
-                                                         crs=domain_buf.crs)
-            vals = list()
-            for k in avail.keys():
-                try:    vals.append(int(k.replace('m','')))
-                except: pass
-            if len(vals) == 0:
-                sys.exit('ERROR _set_dem could not find dem resolution via py3dep')
-            rez = min(vals)
-            if dem_rez in vals: rez = dem_rez # override with user input if available
-            if verbose:
-                print(f'INFO _download_dem downloading 3dep dem with resolution {rez} m for domain {domain.iloc[0]['domain_id']}')
-            dem = py3dep.get_dem(geometry   = domain_geom,
-                                 resolution = rez,
-                                 crs        = domain_buf.crs)
-            dem.rio.to_raster(fname_dem)
-        return None
-    except Exception as e:
-        return e
+def breach_dem(**kwargs):
+    verbose            = kwargs.get('verbose',            False)
+    overwrite          = kwargs.get('overwrite',          False)
+    fname_dem_breached = kwargs.get('fname_dem_breached', None)
+    fname_dem          = kwargs.get('fname_dem',          None)
+    if verbose: print('breach_dem')
+    if fname_dem is None:
+        raise KeyError('breach_dem missing required argument fname_dem')
+    if not os.path.isfile(fname_dem):
+        raise ValueError(f'breach_dem could not find fname_dem {fname_dem}')
+    if not os.path.isfile(fname_dem_breached) or overwrite:
+        if verbose: print(f' using whitebox to breach dem and writing to {fname_dem_breached}')
+        wbe = WbEnvironment()
+        if verbose: wbe.verbose = True
+        wbe.working_directory = os.path.dirname(fname_dem)
+        dem = wbe.read_raster(fname_dem)
+        dem_breached = wbe.breach_depressions_least_cost(dem=dem,
+                                                         fill_deps=False,
+                                                         max_dist=1000)
+        wbe.write_raster(dem_breached, fname_dem_breached, compress=True)
+    else:
+        if verbose: print(f' using existing breached dem {fname_dem_breached}')
 
-def _set_domain_mask(dt:dict):
-    try:
-        domain             = dt['domain']
-        overwrite          = dt['overwrite']
-        verbose            = dt['verbose']
-        fname_dem = os.path.join(domain.iloc[0]['input'],'dem.tiff')
-        fname_out = os.path.join(domain.iloc[0]['input'],'domain_mask.tiff')
-        if verbose: 
-            print(f'calling _set_domain_mask for domain {domain.iloc[0]['domain_id']}')
-        if not os.path.isfile(fname_dem):
-            return f'ERROR _set_domain_mask could not find file {fname_dem}'
-        if not os.path.isfile(fname_out) or overwrite:
-            with rasterio.open(fname_dem,'r') as riods_dem:
-                domain_geom = shapely.ops.unary_union(domain.to_crs(riods_dem.crs).iloc[0].geometry)
-                domain_mask = rasterio.features.rasterize(shapes        = [domain_geom],
-                                                          out_shape     = riods_dem.shape,
-                                                          transform     = riods_dem.transform,
-                                                          fill          = 0,
-                                                          all_touched   = True,
-                                                          dtype         = rasterio.uint8,
-                                                          default_value = 1)
-                domain_mask_meta = riods_dem.meta.copy()
-                domain_mask_meta.update({"driver"    : "GTiff",
-                                        "height"    : riods_dem.shape[0],
-                                        "width"     : riods_dem.shape[1],
-                                        "transform" : riods_dem.transform,
-                                        "dtype"     : rasterio.uint8,
-                                        "nodata"    : 0})
-                with rasterio.open(fname_out, 'w', **domain_mask_meta) as dst:
-                    dst.write(domain_mask,indexes=1)
-        return None
-    except Exception as e:
-        return e
+def set_flow_acc(**kwargs):
+    verbose            = kwargs.get('verbose',            False)
+    overwrite          = kwargs.get('overwrite',          False)
+    fname_dem_breached = kwargs.get('fname_dem_breached', None)
+    fname_facc_ncells  = kwargs.get('fname_facc_ncells',  None)
+    fname_facc_sca     = kwargs.get('fname_facc_sca',     None)
+    if verbose: print(f'set_flow_acc')
+    if fname_dem_breached is None:
+        raise KeyError(f'set_flow_acc missing required argument set_flow_acc')
+    if not os.path.isfile(fname_dem_breached):
+        raise ValueError(f'set_flow_acc could not find fname_dem_breached {fname_dem_breached}')
+    if fname_facc_ncells is None and fname_facc_sca is None:
+        raise KeyError(f'set_flow_acc missing required argument fname_facc_ncells or fname_facc_sca')
+    if not os.path.isfile(fname_facc_ncells) or overwrite:
+        if verbose: print(f' using whitebox to calculate flow accumulation (n cells), writing to {fname_facc_ncells}')
+        wbe = WbEnvironment()
+        if verbose: wbe.verbose = True
+        wbe.working_directory = os.path.dirname(fname_dem_breached)
+        facc_ncells = wbe.dinf_flow_accum(dem=wbe.read_raster(fname_dem_breached),
+                                          out_type='cells')
+        wbe.write_raster(facc_ncells, fname_facc_ncells, compress=True)
+    else:
+        if verbose: print(f' using existing flow accumulation (ncells) file {fname_facc_ncells}')
+    if not os.path.isfile(fname_facc_sca) or overwrite:
+        if verbose: print(f' using whitebox to calculate flow accumulation (sca), writing to {fname_facc_sca}')
+        wbe = WbEnvironment()
+        if verbose: wbe.verbose = True
+        wbe.working_directory = os.path.dirname(fname_dem_breached)
+        facc_sca = wbe.dinf_flow_accum(dem=wbe.read_raster(fname_dem_breached),
+                                       out_type='sca')
+        wbe.write_raster(facc_sca, fname_facc_sca, compress=True)
+    else:
+        if verbose: print(f' using existing flow accumulation (sca) file {fname_facc_sca}')
 
-def _breach_dem(dt:dict):
-    try:
-        domain             = dt['domain']
-        overwrite          = dt['overwrite']
-        verbose            = dt['verbose']
-        dem    = os.path.join(domain.iloc[0]['input'],'dem.tiff')
-        output = os.path.join(domain.iloc[0]['input'],'dem_breached.tiff')
-        if verbose: 
-            print(f'calling _breach_dem for domain {domain.iloc[0]['domain_id']}',flush=True)
-        if not os.path.isfile(dem):
-            return f'ERROR _breach_dem could not find file {dem}'
-        if not os.path.isfile(output) or overwrite:
-            wbt = whitebox.WhiteboxTools()
-            if not verbose: wbt.verbose = False
-            wbt.breach_depressions_least_cost(dem    = dem,
-                                              output = output,
-                                              fill   = False,
-                                              dist   = 1000)
-        return None
-    except Exception as e:
-        return e
-    
-def _breach_dem_fill(dt:dict):
-    try:
-        domain    = dt['domain']
-        overwrite = dt['overwrite']
-        verbose   = dt['verbose']
-        dem       = os.path.join(domain.iloc[0]['input'],'dem.tiff')
-        output    = os.path.join(domain.iloc[0]['input'],'dem_breached.tiff')
-        if verbose: 
-            print(f'calling _breach_dem_fill for domain {domain.iloc[0]['domain_id']}')
-        if not os.path.isfile(dem):
-            return f'ERROR _breach_dem could not find file {dem}'
-        if not os.path.isfile(output) or overwrite:
-            wbt = whitebox.WhiteboxTools()
-            if not verbose: wbt.verbose = False
-            wbt.breach_depressions_least_cost(dem    = dem,
-                                              output = output,
-                                              fill   = True,
-                                              dist   = 20)
-        return None
-    except Exception as e:
-        return e
+def calc_stream_mask(**kwargs):
+    ##TODO fnames might not be os.path.isfile()
+    verbose               = kwargs.get('verbose',              False)
+    overwrite             = kwargs.get('overwrite',            False)
+    fname_facc_ncells     = kwargs.get('fname_facc_ncells',    None)
+    fname_facc_sca        = kwargs.get('fname_facc_sca',       None)
+    facc_threshold_ncells = kwargs.get('facc_threshold_ncells',None)
+    facc_threshold_sca    = kwargs.get('facc_threshold_sca',   None)
+    fname_strm_mask       = kwargs.get('fname_strm_mask',      None)
+    if verbose: print('calling calc_stream_mask')
+    if fname_facc_ncells is None and fname_facc_sca is None:
+        raise KeyError(f'calc_stream_mask missing required argument fname_facc_ncells or fname_facc_sca')
+    if facc_threshold_ncells is None and facc_threshold_sca is None:
+        raise KeyError(f'calc_stream_mask missing required argument facc_threshold_ncells or facc_threshold_sca') 
+    if fname_facc_ncells is None and facc_threshold_ncells is not None:
+        raise KeyError(f'calc_stream_mask missing required argument fname_facc_ncells while given facc_threshold_ncells')
+    if fname_facc_ncells is not None and facc_threshold_ncells is None:
+        raise KeyError(f'calc_stream_mask missing required argument facc_threshold_ncells while given fname_facc_ncells')
+    if fname_facc_sca is None and facc_threshold_sca is not None:
+        raise KeyError(f'calc_stream_mask missing required argument fname_facc_sca while given facc_threshold_sca')
+    if fname_facc_sca is not None and facc_threshold_sca is None:
+        raise KeyError(f'calc_stream_mask missing required argument facc_threshold_sca while given fname_facc_sca')
+    if not os.path.isfile(fname_strm_mask) or overwrite:
+        if os.path.isfile(fname_facc_ncells):
+            if verbose: print(f' setting stream mask using fname_facc_ncells {fname_facc_ncells} and facc_threshold_ncells {facc_threshold_ncells}')
+            wbe = WbEnvironment()
+            if verbose: wbe.verbose = True
+            wbe.working_directory = os.path.dirname(fname_facc_ncells)
+            strm_mask_facc_ncells = wbe.extract_streams(flow_accumulation=wbe.read_raster(fname_facc_ncells),
+                                                        threshold=facc_threshold_ncells,
+                                                        zero_background=True)
+            wbe.write_raster(strm_mask_facc_ncells,fname_strm_mask,compress=True)
+        elif os.path.isfile(fname_facc_sca):
+            if verbose: print(f' setting stream mask using fname_facc_sca {fname_facc_sca} and facc_threshold_sca {facc_threshold_sca}')
+            wbe = WbEnvironment()
+            if verbose: wbe.verbose = True
+            wbe.working_directory = os.path.dirname(fname_facc_sca)
+            strm_mask_facc_sca = wbe.extract_streams(flow_accumulation=wbe.read_raster(fname_facc_sca),
+                                                        threshold=facc_threshold_sca,
+                                                        zero_background=True)
+            wbe.write_raster(strm_mask_facc_sca,fname_strm_mask,compress=True)
+        else:
+            raise Exception(f'calc_stream_mask did not find valid flow accumulation file fname_facc_ncells {fname_facc_ncells} or fname_facc_sca {fname_facc_sca}')
+    else:
+        if verbose: print(f' using existing stream mask {fname_strm_mask}')
 
-def _calc_facc(dt:dict):
-    try:
-        domain        = dt['domain']
-        overwrite     = dt['overwrite']
-        verbose       = dt['verbose']
-        i             = os.path.join(domain.iloc[0]['input'],'dem_breached.tiff')
-        output_ncells = os.path.join(domain.iloc[0]['input'],'flow_acc_ncells.tiff')
-        output_sca    = os.path.join(domain.iloc[0]['input'],'flow_acc_sca.tiff')
-        if verbose: 
-            print(f'calling _calc_facc for domain {domain.iloc[0]["domain_id"]}')
-        if not os.path.isfile(i):
-            return f'ERROR _calc_facc could not find file {i}'
-        if not os.path.isfile(output_ncells) or overwrite:
-            wbt = whitebox.WhiteboxTools()
-            if not verbose: wbt.verbose = False
-            wbt.d_inf_flow_accumulation(i        = i,
-                                        output   = output_ncells,
-                                        out_type = 'cells',
-                                        log      = False)
-        if not os.path.isfile(output_sca) or overwrite:
-            wbt = whitebox.WhiteboxTools()
-            if not verbose: wbt.verbose = False
-            wbt.d_inf_flow_accumulation(i        = i,
-                                        output   = output_sca,
-                                        out_type = 'sca',
-                                        log      = False)
-        return None
-    except Exception as e:
-        return e
+def calc_slope(**kwargs):
+    fname_dem_breached = kwargs.get('fname_dem_breached', None)
+    fname_slope        = kwargs.get('fname_slope',        None)
+    verbose            = kwargs.get('verbose',            False)
+    overwrite          = kwargs.get('overwrite',          False)
+    if verbose: print(f'calling calc_slope')
+    if fname_dem_breached is None or not os.path.isfile(fname_dem_breached):
+        raise ValueError(f'calc_slope missing required argument fname_dem_breached is missing or invalid file {fname_dem_breached}')
+    if not os.path.isfile(fname_slope) or overwrite:
+        if verbose: print(f' using whitebox workflows to calculate {fname_slope} from {fname_dem_breached}')
+        wbe = WbEnvironment()
+        if verbose: wbe.verbose = True
+        wbe.working_directory = os.path.dirname(fname_dem_breached)
+        slope = wbe.slope(dem = wbe.read_raster(fname_dem_breached),
+                          units = 'degrees')
+        wbe.write_raster(slope,fname_slope,compress=True)
+    else:
+        if verbose: print(f' using existing slope file {fname_slope}')
 
-def _calc_stream_mask(dt:dict):
-    try:
-        domain        = dt['domain']
-        overwrite     = dt['overwrite']
-        verbose       = dt['verbose']
-        facc_thresh   = dt['facc_strm_threshold'] #default 10?
-        flow_accum = os.path.join(domain.iloc[0]['input'],'flow_acc_ncells.tiff')
-        output     = os.path.join(domain.iloc[0]['input'],'facc_strm_mask.tiff')
-        if verbose: 
-            print(f'calling _calc_stream_mask for domain {domain.iloc[0]['domain_id']}')
-        if not os.path.isfile(flow_accum):
-            return f'ERROR _calc_stream_mask could not find file {flow_accum}'
-        if not os.path.isfile(output) or overwrite:
-            wbt = whitebox.WhiteboxTools()
-            if not verbose: wbt.verbose = False
-            wbt.extract_streams(flow_accum      = flow_accum,
-                                output          = output,
-                                threshold       = facc_thresh,
-                                zero_background = True)
-            #with rasterio.open(flow_accum,'r') as riods_facc:
-            #    facc = riods_facc.read(1)
-            #    strm_mask = numpy.where(facc >= 0.1, 1, 0).astype(rasterio.uint8)
-            #    strm_mask_meta = riods_facc.meta.copy()
-            #    strm_mask_meta.update({'nodata':0,'dtype':rasterio.uint8})
-            #    with rasterio.open(domain.iloc[0]['fname_strm_mask'],'w',**strm_mask_meta) as riods_strm_mask:
-            #        riods_strm_mask.write(strm_mask,1)
-        return None
-    except Exception as e:
-        return e
+def calc_twi(**kwargs):
+    fname_facc_sca     = kwargs.get('fname_facc_sca', None)
+    fname_slope        = kwargs.get('fname_slope',    None)
+    fname_twi          = kwargs.get('fname_twi',      None)
+    verbose            = kwargs.get('verbose',        False)
+    overwrite          = kwargs.get('overwrite',      False)
+    if verbose: print('calling calc_twi')
+    if fname_facc_sca is None or not os.path.isfile(fname_facc_sca):
+        raise ValueError(f'calc_twi missing required argument fname_facc_sca or the argument {fname_facc_sca} is not a valid file')        
+    if fname_slope is None or not os.path.isfile(fname_slope):
+        raise ValueError(f'calc_twi missing required argument fname_slope or the argument {fname_slope} is not a valid file')        
+    if fname_twi is None:
+        raise KeyError(f'calc_twi missing required argument fname_twi')
+    if not os.path.isfile(fname_twi) or overwrite:
+        if verbose: print(f' using whitebox workflows to calculate {fname_twi}')
+        wbe = WbEnvironment()
+        if verbose: wbe.verbose = True
+        wbe.working_directory = os.path.dirname(fname_facc_sca)
+        twi = wbe.wetness_index(specific_catchment_area = wbe.read_raster(fname_facc_sca),
+                                slope = wbe.read_raster(fname_slope))
+        wbe.write_raster(twi,fname_twi,compress=True)
+    else:
+        if verbose: print(f' found existing TWI file {fname_twi}')
 
-def _calc_slope(dt:dict):
-    try:
-        domain    = dt['domain']
-        overwrite = dt['overwrite']
-        verbose   = dt['verbose']
-        dem       = os.path.join(domain.iloc[0]['input'],'dem_breached.tiff')
-        output    = os.path.join(domain.iloc[0]['input'],'slope.tiff')
-        if verbose: 
-            print(f'calling _calc_slope for domain {domain.iloc[0]['domain_id']}')
-        if not os.path.isfile(dem):
-            return f'ERROR _calc_slope could not find file {dem}'
-        if not os.path.isfile(output) or overwrite:
-            wbt = whitebox.WhiteboxTools()
-            if not verbose: wbt.verbose = False
-            wbt.slope(dem    = dem,
-                      output = output,
-                      units  = 'degrees')
-        return None
-    except Exception as e:
-        return e
+def calc_twi_mean(**kwargs):
+    fname_twi          = kwargs.get('fname_twi',      None)
+    fname_twi_mean     = kwargs.get('fname_twi_mean', None)
+    verbose            = kwargs.get('verbose',        False)
+    overwrite          = kwargs.get('overwrite',      False)
+    if verbose: print('calling calc_twi_mean')
+    if fname_twi is None or not os.path.isfile(fname_twi):
+        raise ValueError(f'calc_calc_twi_meanmean_twi missing required argument fname_twi or argument {fname_twi} is not valid file')
+    if not os.path.isfile(fname_twi_mean) or overwrite:
+        if verbose: print(f' calculating {fname_twi_mean}')
+        with rioxarray.open_rasterio(fname_twi,masked=True) as riox_ds_twi:
+            x_res, _ = riox_ds_twi.rio.resolution()
+            window_size = int(numpy.ceil(1000/x_res))
+            twi_mean = riox_ds_twi.rolling(x=window_size, y=window_size, center=True).mean()
+            twi_mean = twi_mean.rio.write_nodata(riox_ds_twi.rio.nodata)
+            twi_mean.rio.to_raster(fname_twi_mean)
+    else:
+        if verbose: print(f' found existing mean TWI file {fname_twi_mean}')
 
-def _calc_twi(dt:dict):
-    try:    
-        domain    = dt['domain']
-        overwrite = dt['overwrite']
-        verbose   = dt['verbose']
-        sca    = os.path.join(domain.iloc[0]['input'],'flow_acc_sca.tiff')
-        slope  = os.path.join(domain.iloc[0]['input'],'slope.tiff')
-        output = os.path.join(domain.iloc[0]['input'],'twi.tiff')
-        if verbose: 
-            print(f'calling _calc_twi for domain {domain.iloc[0]['domain_id']}')
-        if not os.path.isfile(sca):
-            return f'ERROR _calc_twi could not find file {sca}'
-        if not os.path.isfile(slope):
-            return f'ERROR _calc_twi could not find file {slope}'
-        if not os.path.isfile(output) or overwrite:
-            wbt = whitebox.WhiteboxTools()
-            if not verbose: wbt.verbose = False
-            wbt.wetness_index(sca    = sca,
-                              slope  = slope,
-                              output = output)
-        return None
-    except Exception as e:
-        return e
 
-def _calc_mean_twi(dt:dict):
-    try:
-        domain    = dt['domain']
-        overwrite = dt['overwrite']
-        verbose   = dt['verbose']
-        fname_twi      = os.path.join(domain.iloc[0]['input'],'twi.tiff')
-        fname_twi_mean = os.path.join(domain.iloc[0]['input'],'twi_mean.tiff')
-        if verbose: 
-            print(f'calling _calc_mean_twi for domain {domain.iloc[0]['domain_id']}')
-        if not os.path.isfile(fname_twi): 
-            return f'ERROR _calc_mean_twi could not find file {fname_twi}'
-        if not os.path.isfile(fname_twi_mean) or overwrite:
-            with rasterio.open(fname_twi,'r') as riods_twi:
-                x_rez = riods_twi.transform[0]
-                twi = riods_twi.read(1)
-                twi = numpy.where(numpy.isclose(twi,riods_twi.meta['nodata']),numpy.nan,twi)
-                twi_filled = numpy.where(numpy.isnan(twi),numpy.nanmean(twi),twi)
-                twi_mean = uniform_filter(input=twi_filled, size=int(500//x_rez)) # TODO: hardcoded value. change this
-                twi_mean = numpy.where(numpy.isnan(twi),numpy.nan,twi_mean)
-                twi_mean_meta = riods_twi.meta.copy()
-                twi_mean_meta.update({'nodata':numpy.nan})
-                with rasterio.open(fname_twi_mean,'w',**twi_mean_meta) as riods_twi_mean:
-                    riods_twi_mean.write(twi_mean, 1)
-        return None
-    except Exception as e:
-        return e
+
+
+
+
+

@@ -1,4 +1,4 @@
-import os,sys,math,rasterio,yaml,datetime,numpy,geopandas,hf_hydrodata,pygeohydro,shapely
+import os,sys,rasterio,yaml,datetime,numpy
 
 class Namelist:
 
@@ -17,20 +17,20 @@ class Namelist:
         dem_user                = ''
 
     class Options:
-        domain_hucid            = ''    
-        domain_bbox             = ''
-        domain_latlon           = ''
+        domain_hucid            = None    
+        domain_bbox             = None
+        domain_latlon           = None
         overwrite               = False
         verbose                 = False
         resample_method         = None
-        name_resample_method    = ''
-        huc_break_lvl           = ''
-        facc_strm_threshold     = 0
+        name_resample_method    = 'bilinear'
+        huc_lvl                 = None
+        facc_strm_threshold     = None
         pp                      = False
-        core_count              = ''
+        core_count              = None
         write_wtd_mean_resampled = False
-        hf_hydrodata_un         = ''
-        hf_hydrodata_pin        = ''
+        hf_hydrodata_un         = None
+        hf_hydrodata_pin        = None
         dem_rez                 = None
 
     def __init__(self,filename:str):
@@ -71,7 +71,7 @@ class Namelist:
         #
         #
         self.dirnames.project = os.path.dirname(os.path.abspath(fname_yaml_input))
-        print(f'project directory set to: {self.dirnames.project}')
+        #print(f'project directory set to: {self.dirnames.project}')
         #
         #
         names_domain = ['domain_huc','domain_latlon','domain_bbox']
@@ -175,11 +175,11 @@ class Namelist:
                 sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
         #
         #
-        name_var = 'huc_break_lvl'
+        name_var = 'huc_lvl'
         if name_var in userinput:
             try:
-                self.options.huc_break_lvl = int(userinput[name_var])
-                if self.options.huc_break_lvl not in (2,4,6,8,10,12):
+                self.options.huc_lvl = int(userinput[name_var])
+                if self.options.huc_lvl not in (2,4,6,8,10,12):
                     sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
             except ValueError:
                 sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')

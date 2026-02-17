@@ -1,89 +1,78 @@
-import os,pygeohydro,twtnamelist,geopandas,sys,shapely,rasterio
+import os,pygeohydro,geopandas,shapely
     
-def set_domain(namelist:twtnamelist.Namelist):
-    """Set domain"""
-    if namelist.options.verbose: print('calling set_domain')
-    _set_domain(namelist)
-    _set_paths(namelist)
-
-def _set_domain(namelist:twtnamelist.Namelist):
-    """Set domain"""
-    if namelist.options.verbose: print('calling _set_domain_boundary')
-    if not os.path.isfile(namelist.fnames.domain) or namelist.options.overwrite:
-        domain_id     = str(namelist.options.domain_hucid)
-        huc_break_lvl = namelist.options.huc_break_lvl
-        if len(str(domain_id)) > 0:
-            try:
-                if namelist.options.verbose: print(f'setting domain from domain_hucid {domain_id}')
-                if (isinstance(huc_break_lvl,int) and
-                    huc_break_lvl in (2,4,6,8,10,12) and 
-                    huc_break_lvl > len(str(domain_id))):
-                    colnam = f'huc{huc_break_lvl}'
-                    hucs   = pygeohydro.WBD(colnam) 
-                    ids_all = hucs.bysql("1=1", return_geom=False)
-                    ids_all = ids_all[colnam].tolist()
-                    ids    = [id for id in ids_all if id.startswith(domain_id)]
-                    domain = hucs.byids(colnam, ids, return_geom=True)
-                    domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
-                    domain = domain.rename(columns = {colnam : 'domain_id'})
-                    domain.to_file(namelist.fnames.domain, driver='GPKG')
-                    return
-                else:
-                    colnam = f'huc{len(domain_id)}'
-                    domain = pygeohydro.WBD(colnam).byids(field=colnam,
-                                                          fids =domain_id)
-                    domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
-                    domain = domain.rename(columns = {colnam : 'domain_id'})
-                    domain.to_file(namelist.fnames.domain, driver='GPKG')
-                    return
-            except Exception as e_id:
-                sys.exit(f'ERROR _set_domain_boundary could not set domain from domain_hucid error {e_id}')
-        elif len(namelist.options.domain_bbox) == 4:
-            if namelist.options.verbose: print(f'setting domain from domain_bbox {namelist.options.domain_bbox}')
-            try:
-                geom = shapely.geometry.box(namelist.options.domain_bbox[0],
-                                            namelist.options.domain_bbox[1],
-                                            namelist.options.domain_bbox[2],
-                                            namelist.options.domain_bbox[3])
-                huc_lvl = namelist.options.huc_break_lvl if namelist.options.huc_break_lvl in (2,4,6,8,10,12,16) else 12
-                colnam = f'huc{huc_lvl}'
-                hucs   = pygeohydro.WBD(colnam)
-                domain = hucs.bygeom(geom)
-                domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
-                domain = domain.rename(columns={colnam : 'domain_id'})
-                domain.to_file(namelist.fnames.domain, driver='GPKG')
-                return
-            except Exception as e_bbox:
-                sys.exit(f'ERROR _set_domain_boundary could not set domain from domain_bbox error:{e_bbox}')
-        elif len(namelist.options.domain_latlon) == 2:
-            if namelist.options.verbose: print(f'  setting domain from domain_latlon {namelist.options.domain_latlon}')
-            try:
-                geom = shapely.geometry.Point(namelist.options.domain_latlon[1],
-                                              namelist.options.domain_latlon[0]).buffer(0.01)
-                huc_lvl = namelist.options.huc_break_lvl if namelist.options.huc_break_lvl in (2,4,6,8,10,12) else 12
-                colnam = f'huc{huc_lvl}'
-                hucs   = pygeohydro.WBD(colnam)
-                domain = hucs.bygeom(geom)
-                domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
-                domain = domain.rename(columns={colnam : 'domain_id'})
-                domain.to_file(namelist.fnames.domain, driver='GPKG')
-                return
-            except Exception as e_latlon:
-                sys.exit(f'ERROR _set_domain_boundary could not set domain from domain_latlon error:{e_latlon}')
-
-def _set_paths(namelist:twtnamelist.Namelist):
-    if namelist.options.verbose: print('calling _set_paths')
-    domain = geopandas.read_file(namelist.fnames.domain)
-    domain['input'] = domain['domain_id'].apply(lambda domain_id: os.path.join(namelist.dirnames.input,
-                                                                               str(domain_id)))
-    dirs = domain['input'].tolist()
-    for dir in dirs: os.makedirs(dir, exist_ok=True)
-    domain['output'] = domain['domain_id'].apply(lambda domain_id: os.path.join(str(namelist.dirnames.output),
-                                                                                str(domain_id)))
-    dirs = domain['output'].tolist()
-    for dir in dirs: os.makedirs(dir, exist_ok=True)
-    if os.path.isfile(namelist.fnames.dem_user):
-        domain = domain.to_crs(rasterio.open(namelist.fnames.dem_user,'r').crs.to_string())
+def set_domain(**kwargs):
+    fname_domain  = kwargs.get('fname_domain',  None)
+    verbose       = kwargs.get('verbose',       False)
+    overwrite     = kwargs.get('overwrite',     False)
+    domain_id     = kwargs.get('domain_id',     None)
+    domain_bbox   = kwargs.get('domain_bbox',   None)
+    domain_latlon = kwargs.get('domain_latlon', None)
+    if verbose: print('set_domain')
+    if fname_domain is None: 
+        raise ValueError(f'_set_domain missing required argument fname_domain')
+    if not os.path.isfile(fname_domain) or overwrite:
+        if domain_id is not None:
+            domain = _set_domain_byhucid(**kwargs)
+        elif domain_bbox is not None:
+            domain = _set_domain_bybbox(**kwargs)
+        elif domain_latlon is not None:
+            domain = _set_domain_bylatlonandhuclvl(**kwargs)
+        else:
+            raise Exception(f'_set_domain could not set domain from arguments')
     else:
-        domain = domain.to_crs('EPSG:4326')
-    domain.to_file(namelist.fnames.domain, driver='GPKG')
+        print(f' using existing domain {fname_domain}')
+        domain = geopandas.read_file(fname_domain)
+    return domain
+        
+def _set_domain_byhucid(**kwargs):
+    fname_domain = kwargs.get('fname_domain', None)
+    domain_id    = kwargs.get('domain_id',    None)
+    verbose      = kwargs.get('verbose',      False)
+    if verbose: print('_set_domain_byhucid')
+    if domain_id is None: 
+        raise ValueError(f'_set_domain_byhucid missing required argument domain_id')
+    if not isinstance(domain_id,str): 
+        raise TypeError('_set_domain_byhucid domain_id must be type str') 
+    if len(domain_id) not in (2,4,6,8,10,12):
+        raise ValueError(f'_set_domain_byhucid domain_id {domain_id} is invalid, must be of len 2, 4, 6, 8, 10, 12')
+    colnam = f'huc{len(domain_id)}'
+    hucs   = pygeohydro.WBD(colnam) 
+    domain = hucs.byids(colnam, domain_id, return_geom=True)
+    domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
+    domain = domain.rename(columns = {colnam : 'domain_id'})
+    os.makedirs(name=os.path.dirname(fname_domain),exist_ok=True)
+    domain.to_file(fname_domain, driver='GPKG')
+    return domain
+
+def _set_domain_bybbox(**kwargs):
+    fname_domain = kwargs.get('fname_domain', None)
+    domain_bbox  = kwargs.get('domain_bbox',  None)
+    verbose      = kwargs.get('verbose',      False)
+    if verbose: print('_set_domain_bybbox')
+    geom = shapely.geometry.box(domain_bbox[0],
+                                domain_bbox[1],
+                                domain_bbox[2],
+                                domain_bbox[3])
+    domain = geopandas.GeoDataFrame(geometry=[geom], crs="EPSG:4326") # lat/lon
+    os.makedirs(name=os.path.dirname(fname_domain),exist_ok=True)
+    domain.to_file(fname_domain, driver='GPKG')
+    return domain
+
+def _set_domain_bylatlonandhuclvl(**kwargs):
+    fname_domain  = kwargs.get('fname_domain',  None)
+    domain_latlon = kwargs.get('domain_latlon', None)
+    huc_lvl       = kwargs.get('huc_lvl',         12)
+    verbose       = kwargs.get('verbose',      False)
+    if verbose: print('_set_domain_bybbox')
+    if len(huc_lvl) not in (2,4,6,8,10,12):
+        raise ValueError(f'_set_domain_bylatlonandhuclvl huc_lvl {huc_lvl} is invalid, must be 2, 4, 6, 8, 10, 12')
+    if not isinstance(domain_latlon,list) or not all(isinstance(v, float) for v in domain_latlon) or len(domain_latlon) != 2:
+        raise ValueError(f'_set_domain_bylatlonandhuclvl invalid domain_latlon')
+    geom = shapely.geometry.Point(domain_latlon[1],domain_latlon[0]).buffer(0.01)
+    colnam = f'huc{huc_lvl}'
+    hucs   = pygeohydro.WBD(colnam)
+    domain = hucs.bygeom(geom)
+    domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
+    os.makedirs(name=os.path.dirname(fname_domain),exist_ok=True)
+    domain.to_file(fname_domain, driver='GPKG')
+    return domain

@@ -1,8 +1,5 @@
 import os,sys,math,datetime,geopandas,hf_hydrodata,rasterio,numpy,twtnamelist,shapely
 
-def set_wtd(dt:dict):
-    return _download_hydroframe_data(dt)
-
 def _get_parflow_conus1_bbox(domain:geopandas.GeoDataFrame):
     latlon_tbounds = domain.to_crs(epsg=4326).total_bounds
     conus1grid_minx, conus1grid_miny = hf_hydrodata.from_latlon("conus1", latlon_tbounds[1], latlon_tbounds[0])
@@ -11,97 +8,153 @@ def _get_parflow_conus1_bbox(domain:geopandas.GeoDataFrame):
     conus1grid_maxx, conus1grid_maxy = math.ceil(conus1grid_maxx),  math.ceil(conus1grid_maxy)
     return tuple([conus1grid_minx, conus1grid_miny, conus1grid_maxx, conus1grid_maxy])
 
-def _hf_query(dt:dict):
-    try:
-        domain   = dt['domain']
-        dt_start = dt['dt_start']
-        dt_end   = dt['dt_end']
-        verbose  = dt['verbose']
-        if verbose: 
-            print(f'calling _hf_query for domain {domain.iloc[0]['domain_id']}',flush=True)
-        grid_bounds    = _get_parflow_conus1_bbox(domain)
-        start_date_str = dt_start.strftime('%Y-%m-%d')
-        end_date_str   = (dt_end + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-        options_wtd    = {"dataset"             : "conus1_baseline_mod",
-                        "variable"            : "water_table_depth",
-                        "temporal_resolution" : "daily",
-                        "start_time"          : start_date_str,
-                        "end_time"            : end_date_str,
-                        "grid_bounds"         : grid_bounds}
-        hf_data = hf_hydrodata.get_gridded_data(options_wtd)
-        if hf_data is None or not hasattr(hf_data, 'shape'):
-            sys.exit('ERROR hf_hydrodata query failed')
-        expected_days = (dt_end - dt_start).days + 1
-        if hf_data.shape[0] != expected_days:
-            sys.exit('ERROR hf_hydrodata returned data of unexpected time length or invalid structure')
-        return hf_data
-    except Exception as e:
-        return e
+def hf_query_nc(**kwargs):
+    dt_start = kwargs.get('dt_start', None)
+    dt_end   = kwargs.get('dt_end',   None)
+    savedir  = kwargs.get('savedir',  None)
+    verbose  = kwargs.get('verbose',  False)
+    huc_id   = kwargs.get('huc_id',   None)
+    domain   = kwargs.get('domain',   None)
+    if verbose: print('calling hf_query')
+    if dt_start is None or not isinstance(dt_start,datetime.datetime):
+        raise Exception(f'hf_query missing required argument dt_start or is not a valid datetime')
+    if dt_end is None or not isinstance(dt_end,datetime.datetime):
+        raise Exception(f'hf_query missing required argument dt_end or is not a valid datetime')
+    if savedir is None:
+        raise Exception(f'hf_query missing required argument savedir')
+    if huc_id is not None and not isinstance(huc_id,str):
+        raise Exception(f'hf_query argument huc_id is not valid str')
+    if domain is not None and not isinstance(domain,geopandas.GeoDataFrame):
+        raise Exception(f'hf_query argument domain is not a valid geopandas.GeoDataFrame')
+    if not os.path.isdir(savedir): os.makedirs(savedir,exist_ok=True)
+    start_date_str = dt_start.strftime('%Y-%m-%d')
+    end_date_str   = (dt_end + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+    options_wtd    = {"dataset"             : "conus1_baseline_mod",
+                      "temporal_resolution" : "daily",
+                      "start_time"          : start_date_str,
+                      "end_time"            : end_date_str}
+    if huc_id is not None: options_wtd['huc_id'] = huc_id
+    else:                  options_wtd['grid_bounds'] = _get_parflow_conus1_bbox(domain)
+    if verbose: 
+        hf_hydrodata.get_gridded_files(options_wtd,
+                                       variables=['water_table_depth'],
+                                       filename_template=os.path.join(savedir,"{dataset}_{variable}_{wy}.nc"),
+                                       verbose=True)
+    else: 
+        hf_hydrodata.get_gridded_files(options_wtd,
+                                       variables=['water_table_depth'],
+                                       filename_template=os.path.join(savedir,"{dataset}_{variable}_{wy}.nc"))
 
-def _download_hydroframe_data(dt:dict):
-    try:
-        domain    = dt['domain']
-        dt_start  = dt['dt_start']
-        dt_end    = dt['dt_end']
-        verbose   = dt['verbose']
-        overwrite = dt['overwrite']
-        if verbose: 
-            print(f'calling _download_hydroframe_data for domain {domain.iloc[0]['domain_id']}',flush=True)
-        dirraw = os.path.join(domain.iloc[0]['input'],'wtd','raw')
-        os.makedirs(dirraw, exist_ok=True)
-        download = False
-        idt = dt_start
-        while idt <= dt_end:
-            fname = os.path.join(dirraw,'wtd_'+idt.strftime('%Y%m%d')+'.tiff')
+def hf_query(**kwargs):
+    dt_start = kwargs.get('dt_start', None)
+    dt_end   = kwargs.get('dt_end',   None)
+    huc_id   = kwargs.get('huc_id',   None)
+    domain   = kwargs.get('domain',   None)
+    if dt_start is None or not isinstance(dt_start,datetime.datetime):
+        raise Exception(f'hf_query missing required argument dt_start or is not a valid datetime')
+    if dt_end is None or not isinstance(dt_end,datetime.datetime):
+        raise Exception(f'hf_query missing required argument dt_end or is not a valid datetime')
+    if huc_id is not None and not isinstance(huc_id,str):
+        raise Exception(f'hf_query argument huc_id is not valid str')
+    if huc_id is not None and len(huc_id) not in (2,4,6,8,10):
+        raise Exception(f'hf_query argument huc_id must be level 2, 4, 6, 8, or 10')
+    if domain is not None and not isinstance(domain,geopandas.GeoDataFrame):
+        raise Exception(f'hf_query argument domain is not a valid geopandas.GeoDataFrame')
+    if domain is None and huc_id is None:
+        raise Exception(f'hf_query missing required argument domain or huc_id')
+    start_date_str = dt_start.strftime('%Y-%m-%d')
+    end_date_str   = (dt_end + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+    options_wtd    = {"dataset"             : "conus1_baseline_mod",
+                      "variable"            : "water_table_depth",
+                      "temporal_resolution" : "daily",
+                      "start_time"          : start_date_str,
+                      "end_time"            : end_date_str}
+    if huc_id is not None: options_wtd['huc_id'] = huc_id
+    else:                  options_wtd['grid_bounds'] = _get_parflow_conus1_bbox(domain)
+    hf_data = hf_hydrodata.get_gridded_data(options_wtd)
+    if hf_data is None: raise Exception(f'hf_query call to hf_hydrodata.get_gridded_data failed - result is None')
+    expected_days = (dt_end - dt_start).days + 1
+    if hf_data.shape[0] != expected_days:
+        raise Exception(f'hf_hydrodata returned data of unexpected time length or invalid structure')
+    return hf_data
+
+def _set_download_flag(**kwargs):
+    dt_start  = kwargs.get('dt_start',  None)
+    dt_end    = kwargs.get('dt_end',    None)
+    savedir   = kwargs.get('savedir',   None)
+    overwrite = kwargs.get('overwrite', False)
+    download_flag = False
+    idt = dt_start
+    while idt <= dt_end:
+        fname = os.path.join(savedir,'wtd_'+idt.strftime('%Y%m%d')+'.tiff')
+        if not os.path.isfile(fname) or overwrite:
+            download_flag = True
+            break
+        idt += datetime.timedelta(days=1)
+    return download_flag
+
+def download_hydroframe_data(**kwargs):
+    domain    = kwargs.get('domain',    None)
+    dt_start  = kwargs.get('dt_start',  None)
+    dt_end    = kwargs.get('dt_end',    None)
+    savedir   = kwargs.get('savedir',   None)
+    verbose   = kwargs.get('verbose',   False)
+    overwrite = kwargs.get('overwrite', False)
+    if verbose: print('calling download_hydroframe_data')
+    if domain is None or not isinstance(domain,geopandas.GeoDataFrame):
+        raise Exception(f'download_hydroframe_data missing required argument domain or is not a valid geopandas.GeoDataFrame')
+    if dt_start is None or not isinstance(dt_start,datetime.datetime):
+        raise Exception(f'download_hydroframe_data missing required argument dt_start or is not a valid datetime')
+    if dt_end is None or not isinstance(dt_end,datetime.datetime):
+        raise Exception(f'download_hydroframe_data missing required argument dt_end or is not a valid datetime')
+    if savedir is None:
+        raise Exception(f'download_hydroframe_data missing required argument savedir')
+    if not os.path.isdir(savedir): os.makedirs(savedir,exist_ok=True)
+    download = _set_download_flag(**kwargs)
+    if download:
+        if verbose: print(f' using hf_hydrodata to download parflow water table depth simulations to {savedir}')
+        conus1_proj, _, conus1_transform, conus1_shape = _get_parflow_conus1_grid_info()
+        domain        = geopandas.GeoDataFrame(domain.drop(columns=['geometry']), 
+                                               geometry=domain.to_crs(conus1_proj).buffer(distance=1000),              
+                                               crs=conus1_proj)
+        kwargs['domain']   = domain # overwriting with buffered gdf
+        hf_data            = hf_query(**kwargs)
+        hf_conus1grid_temp = numpy.empty(shape=conus1_shape,dtype=numpy.float64)
+        grid_bounds        = _get_parflow_conus1_bbox(domain)
+        for i in range(hf_data.shape[0]):
+            idt = dt_start + datetime.timedelta(days=i)
+            fname = os.path.join(savedir,'wtd_'+idt.strftime('%Y%m%d')+'.tiff')
             if not os.path.isfile(fname) or overwrite:
-                download = True
-                break
-            idt += datetime.timedelta(days=1)
-        if download:
-            conus1_proj, _, conus1_transform, conus1_shape = _get_parflow_conus1_grid_info()
-            hf_data = _hf_query(dt)
-            if isinstance(hf_data, Exception):
-                return hf_data
-            hf_conus1grid_temp = numpy.empty(shape=conus1_shape,dtype=numpy.float64)
-            shp = shapely.ops.unary_union(domain.to_crs(conus1_proj).buffer(distance=1000).geometry)
-            grid_bounds = _get_parflow_conus1_bbox(domain)
-            for i in range(hf_data.shape[0]):
-                idt = dt_start + datetime.timedelta(days=i)
-                fname = os.path.join(dirraw,'wtd_'+idt.strftime('%Y%m%d')+'.tiff')
-                if not os.path.isfile(fname) or overwrite:
-                    hf_conus1grid_temp[grid_bounds[1]:grid_bounds[3],
-                                       grid_bounds[0]:grid_bounds[2]] = hf_data[i,:,:]
-                    with rasterio.io.MemoryFile() as memfile:
-                        hf_conus1data = memfile.open(driver    = "GTiff", 
-                                                    height    = hf_conus1grid_temp.shape[0], 
-                                                    width     = hf_conus1grid_temp.shape[1], 
-                                                    crs       = conus1_proj, 
-                                                    transform = conus1_transform, 
-                                                    nodata    = numpy.nan, 
-                                                    count     = 1, 
-                                                    dtype     = numpy.float64)
-                        hf_conus1data.write(hf_conus1grid_temp,1)
-                        wtd_data, wtd_transform = rasterio.mask.mask(dataset    = hf_conus1data, 
-                                                                    shapes      = [shp], 
-                                                                    crop        = True, 
-                                                                    all_touched = True, 
-                                                                    filled      = True, 
-                                                                    pad         = True,
-                                                                    nodata      = numpy.nan)
-                        wtd_meta = hf_conus1data.meta
-                        wtd_meta.update({"driver"   : "GTiff",
-                                        "height"    : wtd_data.shape[1],
-                                        "width"     : wtd_data.shape[2],
-                                        "transform" : wtd_transform, 
-                                        "nodata"    : numpy.nan})
-                        with rasterio.open(fname,'w',**wtd_meta) as wtd_dataset:
-                            wtd_dataset.write(wtd_data[0,:,:],1)
-            del hf_data, hf_conus1grid_temp
-            return None
-        else:
-            return None
-    except Exception as e:
-        return e
+                hf_conus1grid_temp[grid_bounds[1]:grid_bounds[3],
+                                   grid_bounds[0]:grid_bounds[2]] = hf_data[i,:,:]
+                with rasterio.io.MemoryFile() as memfile:
+                    hf_conus1data = memfile.open(driver    = "GTiff", 
+                                                height    = hf_conus1grid_temp.shape[0], 
+                                                width     = hf_conus1grid_temp.shape[1], 
+                                                crs       = conus1_proj, 
+                                                transform = conus1_transform, 
+                                                nodata    = numpy.nan, 
+                                                count     = 1, 
+                                                dtype     = numpy.float64)
+                    hf_conus1data.write(hf_conus1grid_temp,1)
+                    wtd_data, wtd_transform = rasterio.mask.mask(dataset    = hf_conus1data, 
+                                                                shapes      = [domain.geometry.union_all()], 
+                                                                crop        = True, 
+                                                                all_touched = True, 
+                                                                filled      = True, 
+                                                                pad         = True,
+                                                                nodata      = numpy.nan)
+                    wtd_meta = hf_conus1data.meta
+                    wtd_meta.update({"driver"   : "GTiff",
+                                    "height"    : wtd_data.shape[1],
+                                    "width"     : wtd_data.shape[2],
+                                    "transform" : wtd_transform, 
+                                    "nodata"    : numpy.nan})
+                    with rasterio.open(fname,'w',**wtd_meta) as wtd_dataset:
+                        wtd_dataset.write(wtd_data[0,:,:],1)
+        del hf_data, hf_conus1grid_temp
+    else:
+        if verbose: print(f' using existing parflow simulation data in {savedir}')
 
 def _get_latlon_parflow_grid(grid_minx,grid_miny,grid_maxx,grid_maxy):
     """Get latlon bbox from ParFlow CONUS1 grid xy bbox"""

@@ -14,8 +14,11 @@ class twtfoliummap(folium.Map):
             if len(domain['domain_id'].unique().tolist()) != 1:
                 print(f'INFO folium map initialized without domain_id - using {self.domain_id}')
         self._set_fnames(namelist=namelist)
-        self._add_domain(namelist=namelist)
-        self._add_nhd()
+        if 'fname_boundary' in kwargs:
+            self._add_boundary(fname_boundary=kwargs['fname_boundary'])
+        else:
+            self._add_domain(namelist=namelist)
+            self._add_nhd()
 
     def _set_fnames(self,namelist:twtnamelist.Namelist):
         """Set file names for various data layers"""
@@ -91,9 +94,9 @@ class twtfoliummap(folium.Map):
                        fname=os.path.join(dir,fname),
                        cmap = cmap)
 
-    def add_percinundated(self,namelist:twtnamelist.Namelist):
+    def add_percinundated(self,namelist:twtnamelist.Namelist,fname:str=None):
         """Get folium map of mean percent inundation values for full grid"""
-        fname = self.fname_percinundated
+        if fname is None: fname = self.fname_percinundated
         if not os.path.isfile(fname): 
             sys.exit(f'ERROR add_percinundated could not find {fname}')
         cmap = branca.colormap.linear.Reds_08
@@ -101,24 +104,24 @@ class twtfoliummap(folium.Map):
                        fname=fname,
                        cmap=cmap)
 
-    def add_nonperennial_strm_classification(self,namelist:twtnamelist.Namelist):
+    def add_nonperennial_strm_classification(self,namelist:twtnamelist.Namelist,fname:str=None):
         """Add non-perennial stream classification to self"""
-        fname = self.fname_nonperennial
+        if fname is None: fname = self.fname_nonperennial
         if not os.path.isfile(fname): 
             sys.exit(f'ERROR add_nonperennial_strm_classification could not find {fname}')
         cmap = branca.colormap.linear.Blues_07
-        self._add_grid(name=f'WTD-TWI Non-perennial ({namelist.options.name_resample_method})',
+        self._add_grid(name=f'WTD-TWI Non-perennial',
                         fname=fname,
                         cmap=cmap)
                 
-    def add_perennial_strm_classification(self,namelist:twtnamelist.Namelist):
+    def add_perennial_strm_classification(self,namelist:twtnamelist.Namelist,fname:str=None):
         """Get folium map of mean WTD values"""
-        fname = self.fname_perennial
+        if fname is None: fname = self.fname_perennial
         if not os.path.isfile(fname): 
             sys.exit(f'ERROR add_perennial_strm_classification could not find {fname}')
         cmap = branca.colormap.LinearColormap(['white','red'], vmin=0, vmax=1)
         if os.path.isfile(fname):
-            self._add_grid(name=f'WTD-TWI Perennial ({namelist.options.name_resample_method})',
+            self._add_grid(name=f'WTD-TWI Perennial',
                             fname=fname,
                             cmap=cmap)
         html_legend = """
@@ -135,10 +138,10 @@ class twtfoliummap(folium.Map):
     def _add_grid(self,name:str,fname:str,cmap:branca.colormap.ColorMap|dict):
         """Add gridded data to folium map"""
         if not os.path.isfile(fname): 
-            sys.exit('ERROR _add_grid could not find '+fname)
-        if fname.find('.tif') == -1: 
+            sys.exit(f'ERROR _add_grid could not find {fname}')
+        if (fname.endswith('.tif') or fname.endswith('.tiff')) == -1: 
             sys.exit('ERROR _add_grid fname does not end in .tif '+fname)
-        folium_crs = str(self.crs).replace('EPSG', 'EPSG:')
+        folium_crs = "EPSG:3857"
         with rasterio.open(fname, 'r') as src:
             dst_transform, dst_width, dst_height = rasterio.warp.calculate_default_transform(
                 src.crs, folium_crs, src.width, src.height, *src.bounds
@@ -152,7 +155,7 @@ class twtfoliummap(folium.Map):
                 'height': dst_height,
                 'nodata': numpy.nan,
                 'count': 1,
-                'dtype': numpy.float64
+                'dtype': 'float64'
             })
             with rasterio.io.MemoryFile().open(**src_prj_meta) as src_prj:
                 rasterio.warp.reproject(
@@ -249,6 +252,23 @@ class twtfoliummap(folium.Map):
         self.fit_bounds([[domain.bounds.miny.iloc[0], domain.bounds.minx.iloc[0]],
                       [domain.bounds.maxy.iloc[0], domain.bounds.maxx.iloc[0]]])
         
+    def _add_boundary(self,fname_boundary:str):
+        """Add boundary to self"""
+        if not os.path.isfile(fname_boundary): 
+            sys.exit('ERROR _add_boundary could not find '+fname_boundary)
+        boundary = geopandas.read_file(fname_boundary)
+        folium_crs = "EPSG:4326"
+        boundary = boundary.to_crs(folium_crs)
+        boundaryfg = folium.FeatureGroup(name='Boundary')
+        for _, r in boundary.iterrows():
+            folium.GeoJson(data=geopandas.GeoSeries(r['geometry']).to_json(),
+                           style_function=lambda x:{"color":"black","fillColor":"none"}).add_to(boundaryfg)
+        boundaryfg.add_to(self)
+        boundary_centroid = boundary.to_crs('+proj=cea').centroid.to_crs(boundary.crs)
+        self.location = [boundary_centroid.y.iloc[0], boundary_centroid.x.iloc[0]]
+        self.fit_bounds([[boundary.bounds.miny.iloc[0], boundary.bounds.minx.iloc[0]],
+                      [boundary.bounds.maxy.iloc[0], boundary.bounds.maxx.iloc[0]]])
+
     def _add_nhd(self):
         """Add nhd boundary to self"""
         fname = self.fname_nhd
