@@ -3,18 +3,32 @@ import os,sys,rasterio,yaml,datetime,numpy
 class Namelist:
 
     class DirectoryNames:
-        project                 = ''
-        input                   = ''
-        output                  = ''
+        project                 = None
+        input                   = None
+        output                  = None
+        wtd_raw                 = None
+        wtd_resampled           = None
+        output_raw              = None
+        output_summary          = None
 
     class Time:
-        start_date              = ''
-        end_date                = ''
-        datetime_dim            = ''
+        start_date              = None
+        end_date                = None
+        datetime_dim            = None
 
     class FileNames:
-        domain                  = ''
-        dem_user                = ''
+        domain                  = None
+        twi                     = None
+        twi_mean                = None
+        soil_texture            = None
+        soil_transmissivity     = None
+        nhdp                    = None
+        dem                     = None
+        dem_breached            = None
+        facc_ncells             = None
+        facc_sca                = None
+        stream_mask             = None
+        slope                   = None
 
     class Options:
         domain_hucid            = None    
@@ -23,12 +37,9 @@ class Namelist:
         overwrite               = False
         verbose                 = False
         resample_method         = None
-        name_resample_method    = 'bilinear'
-        huc_lvl                 = None
-        facc_strm_threshold     = None
-        pp                      = False
-        core_count              = None
-        write_wtd_mean_resampled = False
+        facc_strm_thresh_ncells = 1000
+        facc_strm_thresh_sca    = None
+        write_wtd_resampled     = False
         hf_hydrodata_un         = None
         hf_hydrodata_pin        = None
         dem_rez                 = None
@@ -51,9 +62,23 @@ class Namelist:
     def _set_d_names(self):
         self.dirnames.input             = os.path.join(self.dirnames.project, 'input')
         self.dirnames.output            = os.path.join(self.dirnames.project, 'output')
+        self.dirnames.wtd_raw           = os.path.join(self.dirnames.input,'wtd','raw')
+        self.dirnames.wtd_resampled     = os.path.join(self.dirnames.input,'wtd','resampled')
+        self.dirnames.output_raw        = os.path.join(self.dirnames.output,'raw')
+        self.dirnames.output_summary    = os.path.join(self.dirnames.output,'summary')
 
     def _set_f_names(self):
         self.fnames.domain              = os.path.join(self.dirnames.input, 'domain.gpkg')
+        self.fnames.dem                 = os.path.join(self.dirnames.input, 'dem.tiff')
+        self.fnames.dem_breached        = os.path.join(self.dirnames.input, 'dem_breached.tiff')
+        self.fnames.twi                 = os.path.join(self.dirnames.input, 'twi.tiff')
+        self.fnames.twi_mean            = os.path.join(self.dirnames.input, 'twi_mean.tiff')
+        self.fnames.soil_texture        = os.path.join(self.dirnames.input, 'soil_texture.gpkg')
+        self.fnames.soil_transmissivity = os.path.join(self.dirnames.input, 'soil_transmissivity.tiff')
+        self.fnames.facc_ncells         = os.path.join(self.dirnames.input, 'facc_ncells.tiff')
+        self.fnames.facc_sca            = os.path.join(self.dirnames.input, 'facc_sca.tiff')
+        self.fnames.stream_mask         = os.path.join(self.dirnames.input, 'stream_mask.tiff')
+        self.fnames.slope               = os.path.join(self.dirnames.input, 'slope.tiff')
 
     def _read_inputyaml(self,fname:str):
         self.fnames.namlistyaml = fname
@@ -118,20 +143,22 @@ class Namelist:
         self.time.datetime_dim = numpy.array(dt_dim)
         #
         #
-        name_var = 'facc_strm_threshold'
+        name_var = 'facc_strm_threshold_ncells'
         if name_var not in userinput:
             sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
         try:
-            self.options.facc_strm_threshold = int(userinput[name_var])
+            self.options.facc_strm_thresh_ncells = int(userinput[name_var])
         except ValueError:
             sys.exit(f'ERROR invalid start date {userinput[name_var]} in {fname_yaml_input}')
         #
         #
-        name_var = 'dem'
-        if name_var in userinput:
-            if not os.path.isfile(os.path.abspath(userinput[name_var])):
-                sys.exit(f'ERROR invalid dem input file {userinput[name_var]} in {fname_yaml_input}')
-            self.fnames.dem_user = os.path.abspath(userinput[name_var])
+        name_var = 'facc_strm_threshold_sca'
+        if name_var not in userinput:
+            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
+        try:
+            self.options.facc_strm_thresh_sca = float(userinput[name_var])
+        except ValueError:
+            sys.exit(f'ERROR invalid start date {userinput[name_var]} in {fname_yaml_input}')
         #
         #
         name_var = 'overwrite'
@@ -152,40 +179,14 @@ class Namelist:
         if name_var in userinput:
             if str(userinput[name_var]).lower().find('bilinear') != -1:
                 self.options.resample_method = rasterio.enums.Resampling.bilinear
-                self.options.name_resample_method = 'bilinear'
             elif str(userinput[name_var]).lower().find('cubic') != -1:
                 self.options.resample_method = rasterio.enums.Resampling.cubic
-                self.options.name_resample_method = 'cubic'
             elif str(userinput[name_var]).lower().find('nearest') != -1:
                 self.options.resample_method = rasterio.enums.Resampling.nearest
-                self.options.name_resample_method = 'nearest'
             else:
                 sys.exit(f'ERROR invalid wtd resample method {userinput[name_var]} in {fname_yaml_input}')
         else:
             self.options.resample_method = rasterio.enums.Resampling.bilinear
-            self.options.name_resample_method = 'bilinear'
-        #
-        #
-        name_var = 'pp_core_count'
-        if name_var in userinput:
-            try:
-                self.options.core_count = int(userinput[name_var])
-                self.options.pp         = True
-            except ValueError:
-                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
-        #
-        #
-        name_var = 'huc_lvl'
-        if name_var in userinput:
-            try:
-                self.options.huc_lvl = int(userinput[name_var])
-                if self.options.huc_lvl not in (2,4,6,8,10,12):
-                    sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
-            except ValueError:
-                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
-        if name_var not in userinput and isinstance(self.options.core_count,int):
-            if self.options.verbose:
-                print(f'INFO {name_var} not defined but pp_core_count is {self.options.core_count} : parallel processing will not be implemented')
         #
         #
         name_var = 'hf_hydrodata_un'
@@ -204,11 +205,11 @@ class Namelist:
                 sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
         #
         #
-        name_var = 'write_wtd_mean_resampled'
+        name_var = 'write_wtd_resampled'
         if name_var in userinput and str(userinput[name_var]).upper().find('TRUE') != -1:
-            self.options.write_wtd_mean_resampled = True
+            self.options.write_wtd_resampled = True
         else:
-            self.options.write_wtd_mean_resampled = False
+            self.options.write_wtd_resampled = False
         #
         #
         name_var = 'dem_rez'
