@@ -8,6 +8,8 @@ def set_streams(**kwargs):
     if verbose: print('calling set_streams')
     if domain is None or not isinstance(domain,geopandas.GeoDataFrame):
         raise ValueError(f'set_streams missing required argument domain or is not valid geopandas.GeoDataFrame')
+    if fname_streams is None:
+        raise ValueError(f'set_streams missing required argument fname_streams')
     if not os.path.isfile(fname_streams) or overwrite:
         if verbose: print(f' using pynhd to download NHDPlusHR flowlines - saving to {fname_streams}')
         nhd = pynhd.NHDPlusHR("flowline").bygeom(geom   =domain.total_bounds,
