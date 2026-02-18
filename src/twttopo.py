@@ -1,5 +1,5 @@
 import os
-import numpy
+import rasterio
 import py3dep
 import geopandas
 import rioxarray
@@ -206,19 +206,24 @@ def calc_twi(**kwargs):
 def calc_twi_mean(**kwargs):
     fname_twi          = kwargs.get('fname_twi',      None)
     fname_twi_mean     = kwargs.get('fname_twi_mean', None)
+    wtd_raw_dir        = kwargs.get('wtd_raw_dir',    None)
     verbose            = kwargs.get('verbose',        False)
     overwrite          = kwargs.get('overwrite',      False)
     if verbose: print('calling calc_twi_mean')
     if fname_twi is None or not os.path.isfile(fname_twi):
         raise ValueError(f'calc_calc_twi_meanmean_twi missing required argument fname_twi or argument {fname_twi} is not valid file')
+    if wtd_raw_dir is None or not os.path.isdir(wtd_raw_dir):
+        raise ValueError(f'calc_calc_twi_meanmean_twi missing required argument wtd_raw_dir or argument {wtd_raw_dir} is not valid file')
     if not os.path.isfile(fname_twi_mean) or overwrite:
-        if verbose: print(f' calculating {fname_twi_mean}')
-        with rioxarray.open_rasterio(fname_twi,masked=True) as riox_ds_twi:
-            x_res, _ = riox_ds_twi.rio.resolution()
-            window_size = int(numpy.ceil(1000/x_res))
-            twi_mean = riox_ds_twi.rolling(x=window_size, y=window_size, center=True).mean()
-            twi_mean = twi_mean.rio.write_nodata(riox_ds_twi.rio.nodata)
-            twi_mean.rio.to_raster(fname_twi_mean)
+        fname_example_wtd_raw = [fn for fn in os.listdir(wtd_raw_dir) if str(fn).endswith('.tiff')][0]
+        fname_example_wtd_raw = os.path.join(wtd_raw_dir,fname_example_wtd_raw)
+        if not os.path.isfile(fname_example_wtd_raw):
+            raise ValueError(f'calc_twi_mean could not locate example raw wtd file - {fname_example_wtd_raw} is not valid file')
+        if verbose: print(f' calculating mean twi and saving to {fname_twi_mean} (calculating mean twi in each wtd grid cell)')
+        with rioxarray.open_rasterio(fname_twi,masked=True) as riox_ds_twi, rioxarray.open_rasterio(fname_example_wtd_raw,masked=True) as riox_ds_wtd:
+            twi_mean = riox_ds_twi.rio.reproject_match(riox_ds_wtd, resampling=rasterio.enums.Resampling.average)
+            twi_mean = twi_mean.rio.reproject_match(riox_ds_twi, resample=rasterio.enums.Resampling.nearest)
+            twi_mean.rio.to_raster(fname_twi_mean,compress=True)
     else:
         if verbose: print(f' found existing mean TWI file {fname_twi_mean}')
 

@@ -79,6 +79,7 @@ class Namelist:
         self.fnames.facc_sca            = os.path.join(self.dirnames.input, 'facc_sca.tiff')
         self.fnames.stream_mask         = os.path.join(self.dirnames.input, 'stream_mask.tiff')
         self.fnames.slope               = os.path.join(self.dirnames.input, 'slope.tiff')
+        self.fnames.nhdp                = os.path.join(self.dirnames.input, 'nhdp_flowlines.gpkg')
 
     def _read_inputyaml(self,fname:str):
         self.fnames.namlistyaml = fname
@@ -144,21 +145,19 @@ class Namelist:
         #
         #
         name_var = 'facc_strm_threshold_ncells'
-        if name_var not in userinput:
-            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
-        try:
-            self.options.facc_strm_thresh_ncells = int(userinput[name_var])
-        except ValueError:
-            sys.exit(f'ERROR invalid start date {userinput[name_var]} in {fname_yaml_input}')
+        if name_var in userinput:
+            try:
+                self.options.facc_strm_thresh_ncells = int(userinput[name_var])
+            except ValueError:
+                sys.exit(f'ERROR invalid entry for {name_var} of {userinput[name_var]} in {fname_yaml_input}')
         #
         #
         name_var = 'facc_strm_threshold_sca'
-        if name_var not in userinput:
-            sys.exit(f'ERROR required variable {name_var} not found {fname_yaml_input}')
-        try:
-            self.options.facc_strm_thresh_sca = float(userinput[name_var])
-        except ValueError:
-            sys.exit(f'ERROR invalid start date {userinput[name_var]} in {fname_yaml_input}')
+        if name_var in userinput:
+            try:
+                self.options.facc_strm_thresh_sca = int(userinput[name_var])
+            except ValueError:
+                sys.exit(f'ERROR invalid entry for {name_var} of {userinput[name_var]} in {fname_yaml_input}')
         #
         #
         name_var = 'overwrite'
