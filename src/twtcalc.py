@@ -123,33 +123,18 @@ def calculate_strm_permanence(**kwargs):
                             f'nonperennial_strms_{dstr}.tiff')
     if not os.path.isfile(fname_p) or not os.path.isfile(fname_np) or overwrite:
         if verbose: print(f' writing {fname_p}')
-        perc_inundation = rioxarray.open_rasterio(fname_perc_inundation,masked=True).sel(band=1).load()
-        strm_mask      = rioxarray.open_rasterio(fname_strm_mask,masked=True).sel(band=1).load()
-        strms_p        = perc_inundation.where(strm_mask==1,numpy.nan)
-        strms_p        = strms_p.where(numpy.isclose(strms_p,100.,rtol=0.00001),numpy.nan)
-        strms_p        = strms_p.where()
-'''
-
-        tolerance = 1e-9 # Define a suitable tolerance
-        condition = np.isclose(data_precise, 0.3, atol=tolerance)
-        elected_data_close = data_precise.where(condition, drop=True)
-
-        strms_p = numpy.where(numpy.isclose(perc_inund,100.),1,0).astype(numpy.int8)
-        strms   = rasterio.open(fname_strm_mask,'r').read(1).astype(numpy.int8)
-        strms_p = numpy.where(strms==1,strms_p,0)
-        meta.update({'dtype':numpy.int8,
-                        'nodata':0})
-        with rasterio.open(fname_p, "w", **meta) as riods_out:
-            riods_out.write(strms_p,1)
+        atol = 1.e-6 #for float comparisons
+        perc_inundation  = rioxarray.open_rasterio(fname_perc_inundation,masked=True).sel(band=1).load()
+        strm_mask        = rioxarray.open_rasterio(fname_strm_mask,masked=True).sel(band=1).load()
+        strm_mask        = strm_mask.where(numpy.isclose(strm_mask,1.,atol=atol),numpy.nan)
+        perc_inund_strms = perc_inundation.where(~strm_mask.isnull(),numpy.nan)
+        strms_p          = perc_inund_strms.where(numpy.isclose(perc_inund_strms,100.,atol=atol),numpy.nan)
+        strms_p.rio.to_raster(fname_p,compress='LZMA')
         if verbose: print(f' writing {fname_np}')
-        strms_np = numpy.where((perc_inund>0)&(perc_inund<100),perc_inund,numpy.nan)
-        strms_np = numpy.where(strms==1,strms_np,numpy.nan)
-        meta.update({'dtype':numpy.float32,
-                        'nodata':numpy.nan})
-        with rasterio.open(fname_np, "w", **meta) as riods_out:
-            riods_out.write(strms_np,1)
+        strms_np         = perc_inund_strms.where(perc_inund_strms<(100.-atol),numpy.nan)
+        strms_np         = strms_np.where(strms_np>0.,numpy.nan)
+        strms_np.rio.to_raster(fname_np,compress='LZMA')
 
-'''
 def calculate_summary_perc_inundated(**kwargs):
     dt_start           = kwargs.get('dt_start',                 None)
     dt_end             = kwargs.get('dt_end',                   None)
@@ -187,3 +172,4 @@ def calculate_summary_perc_inundated(**kwargs):
         perc_inun.rio.to_raster(fname_output,compress='LZMA')
     else:
         if verbose: print(f' found existing summary percent inundated grid {fname_output}')
+    return fname_output

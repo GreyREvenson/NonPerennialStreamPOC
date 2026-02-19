@@ -145,7 +145,7 @@ def calc_stream_mask(**kwargs):
             strm_mask_facc_ncells = wbe.extract_streams(flow_accumulation=wbe.read_raster(fname_facc_ncells),
                                                         threshold=facc_threshold_ncells,
                                                         zero_background=True)
-            wbe.write_raster(strm_mask_facc_ncells,fname_strm_mask,compress=True)
+            wbe.write_raster(strm_mask_facc_ncells,fname_strm_mask,compress='LZMA')
         elif os.path.isfile(fname_facc_sca):
             if verbose: print(f' setting stream mask using fname_facc_sca {fname_facc_sca} and facc_threshold_sca {facc_threshold_sca}')
             wbe = WbEnvironment()
@@ -154,7 +154,7 @@ def calc_stream_mask(**kwargs):
             strm_mask_facc_sca = wbe.extract_streams(flow_accumulation=wbe.read_raster(fname_facc_sca),
                                                         threshold=facc_threshold_sca,
                                                         zero_background=True)
-            wbe.write_raster(strm_mask_facc_sca,fname_strm_mask,compress=True)
+            wbe.write_raster(strm_mask_facc_sca,fname_strm_mask,compress='LZMA')
         else:
             raise Exception(f'calc_stream_mask did not find valid flow accumulation file fname_facc_ncells {fname_facc_ncells} or fname_facc_sca {fname_facc_sca}')
     else:
