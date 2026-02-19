@@ -12,7 +12,7 @@ def download_dem(**kwargs):
     overwrite     = kwargs.get('overwrite', False)
     dem_rez       = kwargs.get('dem_rez',   None)
     fname_dem     = kwargs.get('fname_dem', None)
-    if verbose: print('download_dem')
+    if verbose: print('calling download_dem')
     if not isinstance(domain,geopandas.GeoDataFrame):
         raise TypeError(f'download_dem domain argument is missing or is not type geopandas.geodataframe')
     if fname_dem is None:
@@ -42,7 +42,7 @@ def set_domain_mask(**kwargs):
     overwrite         = kwargs.get('overwrite',         False)
     fname_domain_mask = kwargs.get('fname_domain_mask', None)
     fname_dem         = kwargs.get('fname_dem',         None)
-    if verbose: print(f'set_domain_mask')
+    if verbose: print(f'calling set_domain_mask')
     if not os.path.isfile(fname_dem):
         raise ValueError(f'set_domain_mask could not find fname_dem {fname_dem}')
     if not os.path.isfile(fname_domain_mask) or overwrite:
@@ -62,7 +62,7 @@ def breach_dem(**kwargs):
     overwrite          = kwargs.get('overwrite',          False)
     fname_dem_breached = kwargs.get('fname_dem_breached', None)
     fname_dem          = kwargs.get('fname_dem',          None)
-    if verbose: print('breach_dem')
+    if verbose: print('calling breach_dem')
     if fname_dem is None:
         raise KeyError('breach_dem missing required argument fname_dem')
     if not os.path.isfile(fname_dem):
@@ -86,7 +86,7 @@ def set_flow_acc(**kwargs):
     fname_dem_breached = kwargs.get('fname_dem_breached', None)
     fname_facc_ncells  = kwargs.get('fname_facc_ncells',  None)
     fname_facc_sca     = kwargs.get('fname_facc_sca',     None)
-    if verbose: print(f'set_flow_acc')
+    if verbose: print(f'calling set_flow_acc')
     if fname_dem_breached is None:
         raise KeyError(f'set_flow_acc missing required argument set_flow_acc')
     if not os.path.isfile(fname_dem_breached):
@@ -145,7 +145,7 @@ def calc_stream_mask(**kwargs):
             strm_mask_facc_ncells = wbe.extract_streams(flow_accumulation=wbe.read_raster(fname_facc_ncells),
                                                         threshold=facc_threshold_ncells,
                                                         zero_background=True)
-            wbe.write_raster(strm_mask_facc_ncells,fname_strm_mask,compress='LZMA')
+            wbe.write_raster(strm_mask_facc_ncells,fname_strm_mask,compress=True)
         elif os.path.isfile(fname_facc_sca):
             if verbose: print(f' setting stream mask using fname_facc_sca {fname_facc_sca} and facc_threshold_sca {facc_threshold_sca}')
             wbe = WbEnvironment()
@@ -154,7 +154,7 @@ def calc_stream_mask(**kwargs):
             strm_mask_facc_sca = wbe.extract_streams(flow_accumulation=wbe.read_raster(fname_facc_sca),
                                                         threshold=facc_threshold_sca,
                                                         zero_background=True)
-            wbe.write_raster(strm_mask_facc_sca,fname_strm_mask,compress='LZMA')
+            wbe.write_raster(strm_mask_facc_sca,fname_strm_mask,compress=True)
         else:
             raise Exception(f'calc_stream_mask did not find valid flow accumulation file fname_facc_ncells {fname_facc_ncells} or fname_facc_sca {fname_facc_sca}')
     else:

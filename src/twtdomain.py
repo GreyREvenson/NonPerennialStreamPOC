@@ -7,7 +7,7 @@ def set_domain(**kwargs):
     domain_id     = kwargs.get('domain_id',     None)
     domain_bbox   = kwargs.get('domain_bbox',   None)
     domain_latlon = kwargs.get('domain_latlon', None)
-    if verbose: print('set_domain')
+    if verbose: print('calling set_domain')
     if fname_domain is None: 
         raise ValueError(f'_set_domain missing required argument fname_domain')
     if not os.path.isfile(fname_domain) or overwrite:
@@ -64,7 +64,7 @@ def _set_domain_bylatlonandhuclvl(**kwargs):
     huc_lvl       = kwargs.get('huc_lvl',         12)
     verbose       = kwargs.get('verbose',      False)
     if verbose: print('_set_domain_bybbox')
-    if len(huc_lvl) not in (2,4,6,8,10,12):
+    if int(huc_lvl) not in (2,4,6,8,10,12):
         raise ValueError(f'_set_domain_bylatlonandhuclvl huc_lvl {huc_lvl} is invalid, must be 2, 4, 6, 8, 10, 12')
     if not isinstance(domain_latlon,list) or not all(isinstance(v, float) for v in domain_latlon) or len(domain_latlon) != 2:
         raise ValueError(f'_set_domain_bylatlonandhuclvl invalid domain_latlon')

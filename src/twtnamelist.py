@@ -93,7 +93,7 @@ class Namelist:
         """Set variables using read-in values"""
         #
         #
-        userinput = self._read_inputyaml(fname_yaml_input)
+        userinput = self._read_inputyaml(os.path.abspath(fname_yaml_input))
         #
         #
         self.dirnames.project = os.path.dirname(os.path.abspath(fname_yaml_input))
