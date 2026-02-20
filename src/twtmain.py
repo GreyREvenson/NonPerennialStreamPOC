@@ -1,4 +1,5 @@
-import os,sys
+import os
+import asyncio
 import twtnamelist
 import twtdomain
 import twtwt
@@ -6,11 +7,12 @@ import twttopo
 import twtsoils
 import twtstreams
 import twtcalc
+import yaml
 import hf_hydrodata
 
-async def runit(fname_namelist:str):
+async def calculate(fname_namelist):
 
-    fname_namelist = os.path.abspath(fname_namelist)
+    fname_namelist = os.path.abspath(str(fname_namelist))
     namelist = twtnamelist.Namelist(filename=fname_namelist)
 
     kwargs = {'fname_domain' : namelist.fnames.domain,
@@ -126,3 +128,24 @@ async def runit(fname_namelist:str):
               'verbose'                   : namelist.options.verbose,
               'overwrite'                 : namelist.options.overwrite}
     twtcalc.calculate_strm_permanence(**kwargs)
+
+def calculate_async_wrapper(**kwargs):
+    fname_namelist = kwargs.get('fname_namelist',None)
+    domain = kwargs.get('domain',None)
+    fname_domain = kwargs.get('fname_domain',None)
+    if fname_namelist is None:
+        raise KeyError(f'calculate_async_wrapper missing required argument fname_namelist')
+    if domain is None:
+        raise KeyError(f'calculate_async_wrapper missing required argument domain')
+    if fname_domain is None:
+        raise KeyError(f'calculate_async_wrapper missing required argument fname_domain')
+    os.makedirs(os.path.dirname(fname_namelist),exist_ok=True)
+    os.makedirs(os.path.dirname(fname_domain),exist_ok=True)
+    domain.to_file(fname_domain, driver='GPKG')
+    del kwargs['fname_namelist']
+    del kwargs['domain']
+    del kwargs['fname_domain']
+    with open(fname_namelist, 'w') as yamlf:
+        yaml.dump(kwargs, yamlf, default_flow_style=False, sort_keys=False)
+    asyncio.run(calculate(fname_namelist))
+    return 

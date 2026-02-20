@@ -76,3 +76,14 @@ def _set_domain_bylatlonandhuclvl(**kwargs):
     os.makedirs(name=os.path.dirname(fname_domain),exist_ok=True)
     domain.to_file(fname_domain, driver='GPKG')
     return domain
+
+def get_conus1_hucs(**kwargs):
+    domain   = kwargs.get('domain', None)
+    if domain is None:
+        raise KeyError('get_pp_hucs missing required argument domain')
+    if not isinstance(domain,geopandas.GeoDataFrame):
+        raise KeyError(f'get_pp_hucs domain argument is not valid geopandas.gdf')
+    hucs = pygeohydro.watershed.huc_wb_full(12)
+    domain_hucs = geopandas.clip(gdf=hucs,mask=domain.to_crs(hucs.crs))
+    domain_hucs = domain_hucs.drop(columns=[col for col in domain_hucs.columns if col not in ['huc12','geometry']]) 
+    return domain_hucs

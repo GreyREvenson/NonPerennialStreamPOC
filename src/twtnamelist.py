@@ -81,7 +81,7 @@ class Namelist:
         self.fnames.slope               = os.path.join(self.dirnames.input, 'slope.tiff')
         self.fnames.nhdp                = os.path.join(self.dirnames.input, 'nhdp_flowlines.gpkg')
 
-    def _read_inputyaml(self,fname:str):
+    def read_inputyaml(self,fname:str):
         self.fnames.namlistyaml = fname
         with open(self.fnames.namlistyaml,'r') as yamlf:
             try: 
@@ -93,7 +93,7 @@ class Namelist:
         """Set variables using read-in values"""
         #
         #
-        userinput = self._read_inputyaml(os.path.abspath(fname_yaml_input))
+        userinput = self.read_inputyaml(os.path.abspath(fname_yaml_input))
         #
         #
         self.dirnames.project = os.path.dirname(os.path.abspath(fname_yaml_input))

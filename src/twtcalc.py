@@ -158,17 +158,20 @@ def calculate_summary_perc_inundated(**kwargs):
     if not os.path.isfile(fname_output) or overwrite:
         if verbose: print(f' writing summary percent inundation grid {fname_output}')
         sumgrid = rioxarray.open_rasterio(filename=fname_dem,masked=True).sel(band=1).load()
-        sumgrid = sumgrid.where(sumgrid.isnull(),0)
+        sumgrid = sumgrid.where(sumgrid.isnull(),0.)
         idt     = dt_start
         while idt < dt_end:
             dt_str          = idt.strftime('%Y%m%d')
             fname_inund_dti = os.path.join(inundation_raw_dir,
                                            f'inundation_{dt_str}.tiff')
             inun_dti        = rioxarray.open_rasterio(filename=fname_inund_dti,masked=True).sel(band=1).load()
+            inun_dti        = inun_dti.where(~inun_dti.isnull(),0)
+            inun_dti        = inun_dti.where(~sumgrid.isnull(),numpy.nan)
+            inun_dti        = inun_dti
             sumgrid        += inun_dti
             idt            += datetime.timedelta(days=1)
         perc_inun = (sumgrid/float((dt_end-dt_start).days))*100.
-        perc_inun = perc_inun.where(perc_inun>0.,numpy.nan)
+        #perc_inun = perc_inun.where(perc_inun>0.,numpy.nan)
         perc_inun.rio.to_raster(fname_output,compress='LZMA')
     else:
         if verbose: print(f' found existing summary percent inundated grid {fname_output}')
