@@ -1,0 +1,28 @@
+
+#
+# HUC id to define the domain
+domain_bbox: [-121.47939483437318, 31.651836025255015, -76.09875469594509, 50.49802132270979]
+#
+# Overwrite/recreate intermediate data outputs
+overwrite: False
+#
+# Print additional model messages 
+verbose: True
+verbose_wbe: False
+#
+# start date for analysis - must be within parflow simulation period
+start_date: '2002-10-01'
+#
+# end date for analysis - must be within parflow simulation period
+end_date: '2006-09-30'
+#
+# threshold for stream network identification via flow accumulation calculation - must be integer -- notes: 500,1000,5000,10000,50000,100000
+facc_strm_threshold: 1000
+#
+# hf_hydrodata credentials https://hf-hydrodata.readthedocs.io/en/latest/getting_started.html#creating-a-hydrogen-api-account
+hf_hydrodata_un: 'evenson.grey@epa.gov'
+hf_hydrodata_pin: '2234'
+
+dem_rez: 10
+
+n_cores: 25
