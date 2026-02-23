@@ -85,7 +85,8 @@ def set_soil_transmissivity(**kwargs):
             tot      = int(riox_ds_dem.count().compute())
             percnan  = float((nancount / tot) * 100.)
             nanmean  = float(riox_ds_trns.mean(skipna=True))
-            if verbose: print(f' WARNING : {nancount} of {tot} cells (~{percnan:.2f}% of domain) had nan transmissivity - filling with grid mean value {nanmean}')
+            if verbose and nancount > 0: 
+                print(f' WARNING : {nancount} of {tot} cells (~{percnan:.2f}% of domain) had nan transmissivity - filling with grid mean value {nanmean}')
             soil_texture_grid = soil_texture_grid.where(~mask, nanmean)
             soil_texture_grid = soil_texture_grid.transpose('band', 'y', 'x')
             riox_ds_trns.close()

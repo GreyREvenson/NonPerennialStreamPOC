@@ -1,22 +1,16 @@
 import os
 import rasterio
 import py3dep
-import geopandas
 import rioxarray
 from geocube.api.core import make_geocube
 from whitebox_workflows import WbEnvironment
 
-def download_dem(**kwargs):
+async def download_dem(**kwargs):
     domain        = kwargs.get('domain',    None)
     verbose       = kwargs.get('verbose',   False)
     overwrite     = kwargs.get('overwrite', False)
     dem_rez       = kwargs.get('dem_rez',   None)
     fname_dem     = kwargs.get('fname_dem', None)
-    if verbose: print('calling download_dem')
-    if not isinstance(domain,geopandas.GeoDataFrame):
-        raise TypeError(f'download_dem domain argument is missing or is not type geopandas.geodataframe')
-    if fname_dem is None:
-        raise ValueError(f'download_dem missing required argument fname_dem')
     if not os.path.isfile(fname_dem) or overwrite:
         avail = py3dep.check_3dep_availability(bbox=tuple(domain.total_bounds),crs=domain.crs)
         vals  = list()
@@ -58,10 +52,11 @@ def set_domain_mask(**kwargs):
         if verbose: print(f' using existing domain mask {fname_domain_mask}')
 
 def breach_dem(**kwargs):
-    verbose            = kwargs.get('verbose',            False)
-    overwrite          = kwargs.get('overwrite',          False)
     fname_dem_breached = kwargs.get('fname_dem_breached', None)
     fname_dem          = kwargs.get('fname_dem',          None)
+    verbose            = kwargs.get('verbose',            False)
+    verbose_wbe        = kwargs.get('verbose_wbe',        verbose)
+    overwrite          = kwargs.get('overwrite',          False)
     if verbose: print('calling breach_dem')
     if fname_dem is None:
         raise KeyError('breach_dem missing required argument fname_dem')
@@ -70,7 +65,8 @@ def breach_dem(**kwargs):
     if not os.path.isfile(fname_dem_breached) or overwrite:
         if verbose: print(f' using whitebox to breach dem and writing to {fname_dem_breached}')
         wbe = WbEnvironment()
-        if verbose: wbe.verbose = True
+        if verbose_wbe: wbe.verbose = True
+        else:           wbe.verbose = False
         wbe.working_directory = os.path.dirname(fname_dem)
         dem = wbe.read_raster(fname_dem)
         dem_breached = wbe.breach_depressions_least_cost(dem=dem,
@@ -81,11 +77,12 @@ def breach_dem(**kwargs):
         if verbose: print(f' using existing breached dem {fname_dem_breached}')
 
 def set_flow_acc(**kwargs):
-    verbose            = kwargs.get('verbose',            False)
-    overwrite          = kwargs.get('overwrite',          False)
     fname_dem_breached = kwargs.get('fname_dem_breached', None)
     fname_facc_ncells  = kwargs.get('fname_facc_ncells',  None)
     fname_facc_sca     = kwargs.get('fname_facc_sca',     None)
+    verbose            = kwargs.get('verbose',            False)
+    verbose_wbe        = kwargs.get('verbose_wbe',        verbose)
+    overwrite          = kwargs.get('overwrite',          False)
     if verbose: print(f'calling set_flow_acc')
     if fname_dem_breached is None:
         raise KeyError(f'set_flow_acc missing required argument set_flow_acc')
@@ -96,7 +93,8 @@ def set_flow_acc(**kwargs):
     if not os.path.isfile(fname_facc_ncells) or overwrite:
         if verbose: print(f' using whitebox to calculate flow accumulation (n cells), writing to {fname_facc_ncells}')
         wbe = WbEnvironment()
-        if verbose: wbe.verbose = True
+        if verbose_wbe: wbe.verbose = True
+        else:           wbe.verbose = False
         wbe.working_directory = os.path.dirname(fname_dem_breached)
         facc_ncells = wbe.dinf_flow_accum(dem=wbe.read_raster(fname_dem_breached),
                                           out_type='cells')
@@ -106,7 +104,8 @@ def set_flow_acc(**kwargs):
     if not os.path.isfile(fname_facc_sca) or overwrite:
         if verbose: print(f' using whitebox to calculate flow accumulation (sca), writing to {fname_facc_sca}')
         wbe = WbEnvironment()
-        if verbose: wbe.verbose = True
+        if verbose_wbe: wbe.verbose = True
+        else:           wbe.verbose = False
         wbe.working_directory = os.path.dirname(fname_dem_breached)
         facc_sca = wbe.dinf_flow_accum(dem=wbe.read_raster(fname_dem_breached),
                                        out_type='sca')
@@ -117,6 +116,7 @@ def set_flow_acc(**kwargs):
 def calc_stream_mask(**kwargs):
     ##TODO fnames might not be os.path.isfile()
     verbose               = kwargs.get('verbose',              False)
+    verbose_wbe           = kwargs.get('verbose_wbe',          verbose)
     overwrite             = kwargs.get('overwrite',            False)
     fname_facc_ncells     = kwargs.get('fname_facc_ncells',    None)
     fname_facc_sca        = kwargs.get('fname_facc_sca',       None)
@@ -140,7 +140,8 @@ def calc_stream_mask(**kwargs):
         if os.path.isfile(fname_facc_ncells):
             if verbose: print(f' setting stream mask using fname_facc_ncells {fname_facc_ncells} and facc_threshold_ncells {facc_threshold_ncells}')
             wbe = WbEnvironment()
-            if verbose: wbe.verbose = True
+            if verbose_wbe: wbe.verbose = True
+            else:           wbe.verbose = False
             wbe.working_directory = os.path.dirname(fname_facc_ncells)
             strm_mask_facc_ncells = wbe.extract_streams(flow_accumulation=wbe.read_raster(fname_facc_ncells),
                                                         threshold=facc_threshold_ncells,
@@ -149,7 +150,8 @@ def calc_stream_mask(**kwargs):
         elif os.path.isfile(fname_facc_sca):
             if verbose: print(f' setting stream mask using fname_facc_sca {fname_facc_sca} and facc_threshold_sca {facc_threshold_sca}')
             wbe = WbEnvironment()
-            if verbose: wbe.verbose = True
+            if verbose_wbe: wbe.verbose = True
+            else:           wbe.verbose = False
             wbe.working_directory = os.path.dirname(fname_facc_sca)
             strm_mask_facc_sca = wbe.extract_streams(flow_accumulation=wbe.read_raster(fname_facc_sca),
                                                         threshold=facc_threshold_sca,
@@ -164,6 +166,7 @@ def calc_slope(**kwargs):
     fname_dem_breached = kwargs.get('fname_dem_breached', None)
     fname_slope        = kwargs.get('fname_slope',        None)
     verbose            = kwargs.get('verbose',            False)
+    verbose_wbe        = kwargs.get('verbose_wbe',        verbose)
     overwrite          = kwargs.get('overwrite',          False)
     if verbose: print(f'calling calc_slope')
     if fname_dem_breached is None or not os.path.isfile(fname_dem_breached):
@@ -171,7 +174,8 @@ def calc_slope(**kwargs):
     if not os.path.isfile(fname_slope) or overwrite:
         if verbose: print(f' using whitebox workflows to calculate {fname_slope} from {fname_dem_breached}')
         wbe = WbEnvironment()
-        if verbose: wbe.verbose = True
+        if verbose_wbe: wbe.verbose = True
+        else:           wbe.verbose = False
         wbe.working_directory = os.path.dirname(fname_dem_breached)
         slope = wbe.slope(dem = wbe.read_raster(fname_dem_breached),
                           units = 'degrees')
@@ -184,6 +188,7 @@ def calc_twi(**kwargs):
     fname_slope        = kwargs.get('fname_slope',    None)
     fname_twi          = kwargs.get('fname_twi',      None)
     verbose            = kwargs.get('verbose',        False)
+    verbose_wbe        = kwargs.get('verbose_wbe',        verbose)
     overwrite          = kwargs.get('overwrite',      False)
     if verbose: print('calling calc_twi')
     if fname_facc_sca is None or not os.path.isfile(fname_facc_sca):
@@ -195,7 +200,8 @@ def calc_twi(**kwargs):
     if not os.path.isfile(fname_twi) or overwrite:
         if verbose: print(f' using whitebox workflows to calculate {fname_twi}')
         wbe = WbEnvironment()
-        if verbose: wbe.verbose = True
+        if verbose_wbe: wbe.verbose = True
+        else:           wbe.verbose = False
         wbe.working_directory = os.path.dirname(fname_facc_sca)
         twi = wbe.wetness_index(specific_catchment_area = wbe.read_raster(fname_facc_sca),
                                 slope = wbe.read_raster(fname_slope))
@@ -226,8 +232,6 @@ def calc_twi_mean(**kwargs):
             twi_mean.rio.to_raster(fname_twi_mean,compress=True)
     else:
         if verbose: print(f' found existing mean TWI file {fname_twi_mean}')
-
-
 
 
 

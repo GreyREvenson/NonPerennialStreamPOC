@@ -78,12 +78,21 @@ def _set_domain_bylatlonandhuclvl(**kwargs):
     return domain
 
 def get_conus1_hucs(**kwargs):
-    domain   = kwargs.get('domain', None)
-    if domain is None:
-        raise KeyError('get_pp_hucs missing required argument domain')
-    if not isinstance(domain,geopandas.GeoDataFrame):
-        raise KeyError(f'get_pp_hucs domain argument is not valid geopandas.gdf')
-    hucs = pygeohydro.watershed.huc_wb_full(12)
-    domain_hucs = geopandas.clip(gdf=hucs,mask=domain.to_crs(hucs.crs))
-    domain_hucs = domain_hucs.drop(columns=[col for col in domain_hucs.columns if col not in ['huc12','geometry']]) 
+    domain            = kwargs.get('domain',            None)
+    fname_domain_hucs = kwargs.get('fname_domain_hucs', None)
+    if not os.path.isfile(fname_domain_hucs):
+        fname_wb_full_temp = os.path.join(os.path.dirname(fname_domain_hucs),'wb_full.gpkg')
+        if os.path.isfile(fname_wb_full_temp): 
+            wb_full = geopandas.read_file(fname_wb_full_temp)
+        else:
+            wb_full = pygeohydro.watershed.huc_wb_full(12)
+            wb_full.to_file(fname_wb_full_temp)
+        wb_full = wb_full.to_crs(domain.crs)
+        domain_hucs = geopandas.clip(gdf=wb_full,mask=domain)
+        domain_hucs = domain_hucs[~domain_hucs['states'].str.contains('CN')]
+        domain_hucs = domain_hucs[domain_hucs['name'] != 'Lake Michigan']
+        domain_hucs = domain_hucs.drop(columns=[col for col in domain_hucs.columns if col not in ['huc12','geometry']]) 
+        domain_hucs.to_file(fname_domain_hucs,driver='GPKG')
+    else:
+        domain_hucs = geopandas.read_file(fname_wb_full_temp)
     return domain_hucs

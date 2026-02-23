@@ -36,6 +36,7 @@ class Namelist:
         domain_latlon           = None
         overwrite               = False
         verbose                 = False
+        verbose_wbe             = False
         resample_method         = None
         facc_strm_thresh_ncells = 1000
         facc_strm_thresh_sca    = None
@@ -217,3 +218,10 @@ class Namelist:
                 self.options.dem_rez = float(userinput[name_var])
             except ValueError:
                 sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
+        #
+        #
+        name_var = 'verbose_wbe'
+        if name_var in userinput and str(userinput[name_var]).upper().find('TRUE') != -1:
+            self.options.verbose_wbe = True
+        else:
+            self.options.verbose_wbe = False
