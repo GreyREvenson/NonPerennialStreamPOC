@@ -154,6 +154,9 @@ async def calculate(fname_namelist):
     return None
 
 def calculate_async_wrapper(**kwargs):
+    """async wrapper for calculation (for multiprocessing applications)"""
+    #
+    #
     fname_namelist = kwargs.get('fname_namelist',None)
     huc_id         = kwargs.get('domain_huc',    None)
     #
@@ -168,8 +171,8 @@ def calculate_async_wrapper(**kwargs):
     #
     try:
         fname_namelist = kwargs.get('fname_namelist',None)
-        domain = kwargs.get('domain',None)
-        fname_domain = kwargs.get('fname_domain',None)
+        domain         = kwargs.get('domain',None)
+        fname_domain   = kwargs.get('fname_domain',None)
         os.makedirs(os.path.dirname(fname_namelist),exist_ok=True)
         os.makedirs(os.path.dirname(fname_domain),exist_ok=True)
         domain.to_file(fname_domain, driver='GPKG')
