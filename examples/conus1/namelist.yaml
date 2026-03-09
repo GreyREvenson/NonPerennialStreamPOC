@@ -1,14 +1,10 @@
 
 #
-# HUC id to define the domain
-domain_bbox: [-121.47939483437318, 31.651836025255015, -76.09875469594509, 50.49802132270979]
-#
 # Overwrite/recreate intermediate data outputs
 overwrite: False
 #
 # Print additional model messages 
 verbose: True
-verbose_wbe: False
 #
 # start date for analysis - must be within parflow simulation period
 start_date: '2002-10-01'
@@ -25,4 +21,6 @@ hf_hydrodata_pin: '2234'
 
 dem_rez: 10
 
-n_cores: 25
+n_cores: 35
+
+conus1_download_dir: 'U:\NonPerennialStreamPOC\examples\conus1\input\wtd\raw'
