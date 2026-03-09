@@ -1,16 +1,22 @@
-import os,numpy,geopandas,soiltexture,soildb,rioxarray
+import os,numpy,geopandas,soiltexture,soildb,rioxarray,sys
 from geocube.api.core import make_geocube
 #from urllib import response
 
 async def set_soil_texture(**kwargs):
     fname_texture = kwargs.get('fname_texture', None)
     domain        = kwargs.get('domain',        None)
+    domain_buf    = kwargs.get('domain_buf',    None)
     verbose       = kwargs.get('verbose',       False)
     overwrite     = kwargs.get('overwrite',     False)
+    fname_verbose      = kwargs.get('fname_verbose',         None)
+    if fname_verbose is not None:
+        f = open(fname_verbose, "a", buffering=1)
+        sys.stdout = f
+        sys.stderr = f
     if verbose: print(f'calling set_soil_texture')
     if not os.path.isfile(fname_texture) or overwrite:
         if verbose: print(f' using soildb to download soil texture and saving to {fname_texture}')
-        response = await soildb.spatial_query(geometry=domain.to_crs(epsg=4326).geometry.union_all().wkt,
+        response = await soildb.spatial_query(geometry=domain_buf.to_crs(epsg=4326).geometry.union_all(),
                                         table="mupolygon",
                                         spatial_relation="intersects",
                                         return_type="spatial")
@@ -43,6 +49,10 @@ async def set_soil_texture(**kwargs):
         soilsgdf.to_file(fname_texture, driver="GPKG")
     else:
         if verbose: print(f' found existing soil texture file {fname_texture}')
+    if fname_verbose is not None:
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+        f.close()
 
 def set_soil_transmissivity(**kwargs):
     fname_texture        = kwargs.get('fname_texture', None)
@@ -50,6 +60,11 @@ def set_soil_transmissivity(**kwargs):
     fname_transmissivity = kwargs.get('fname_transmissivity', None)
     verbose              = kwargs.get('verbose',       False)
     overwrite            = kwargs.get('overwrite',     False)
+    fname_verbose      = kwargs.get('fname_verbose',         None)
+    if fname_verbose is not None:
+        f = open(fname_verbose, "a", buffering=1)
+        sys.stdout = f
+        sys.stderr = f
     if verbose: print('calling set_soil_transmissivity')
     if not os.path.isfile(fname_transmissivity) or overwrite:
         if verbose: print(f' creating {fname_transmissivity} from {fname_texture}')
@@ -93,3 +108,7 @@ def set_soil_transmissivity(**kwargs):
             soil_texture_grid['f'].rio.to_raster(fname_transmissivity)
     else:
         if verbose: print(f' using existing transmissivity data {fname_transmissivity}')
+    if fname_verbose is not None:
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+        f.close()

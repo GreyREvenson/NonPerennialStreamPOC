@@ -12,10 +12,18 @@ import datetime
 import yaml
 import hf_hydrodata
 
-async def calculate(fname_namelist):
+async def calculate(fname_namelist,fname_verbose):
     #
     #
     fname_namelist = os.path.abspath(str(fname_namelist))
+    fname_verbose  = os.path.abspath(str(fname_verbose))
+    #
+    #
+    f = open(fname_verbose, "a", buffering=1)
+    sys.stdout = f
+    sys.stderr = f
+    #
+    #
     namelist = twtnamelist.Namelist(filename=fname_namelist)
     #
     #
@@ -28,17 +36,40 @@ async def calculate(fname_namelist):
         kwargs.update({'domain_latlon' : namelist.options.domain_latlon})
     elif namelist.options.domain_bbox is not None:
         kwargs.update({'domain_bbox'   : namelist.options.domain_bbox})
+    else:
+        if not os.path.isfile(namelist.fnames.domain):
+            raise ValueError(f'calculate_async_wrapper could not set domain from namelist options, and domain file {namelist.fnames.domain} does not exist')
     domain = twtdomain.set_domain(**kwargs)
     #
     #
-    kwargs = {'dt_start'  : namelist.time.start_date,
-              'dt_end'    : namelist.time.end_date,
-              'savedir'   : namelist.dirnames.wtd_raw,
-              'domain'    : domain,
-              'verbose'   : namelist.options.verbose,
-              'overwrite' : namelist.options.overwrite}
-    hf_hydrodata.register_api_pin(namelist.options.hf_hydrodata_un, namelist.options.hf_hydrodata_pin)
-    twtwt.download_hydroframe_data(**kwargs)
+    kwargs = {'domain'           : domain,
+              'fname_domain_buf' : namelist.fnames.domain_buf,
+              'buf_dist_m'       : namelist.options.domain_buf_dist_m,
+              'verbose'          : namelist.options.verbose,
+              'overwrite'        : namelist.options.overwrite}
+    domain_buf = twtdomain.set_domain_buf(**kwargs)
+    #
+    #
+    if namelist.options.conus1_download_dir is None:
+        kwargs = {'dt_start'  : namelist.time.start_date,
+                'dt_end'    : namelist.time.end_date,
+                'savedir'   : namelist.dirnames.wtd_raw,
+                'domain'    : domain,
+                'verbose'   : namelist.options.verbose,
+                'overwrite' : namelist.options.overwrite}
+        if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
+        hf_hydrodata.register_api_pin(namelist.options.hf_hydrodata_un, namelist.options.hf_hydrodata_pin)
+        twtwt.download_hydroframe_data(**kwargs)
+    else:
+        kwargs = {'dt_start'  : namelist.time.start_date,
+                'dt_end'    : namelist.time.end_date,
+                'wtd_in_dir'   : namelist.options.conus1_download_dir,
+                'wtd_out_dir': namelist.dirnames.wtd_raw,
+                'domain'    : domain,
+                'verbose'   : namelist.options.verbose,
+                'overwrite' : namelist.options.overwrite}
+        if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
+        twtwt.break_conus1_tiffs(**kwargs)
     #
     #
     kwargs = {'domain'    : domain,
@@ -46,15 +77,15 @@ async def calculate(fname_namelist):
               'fname_dem' : namelist.fnames.dem,
               'verbose'   : namelist.options.verbose,
               'overwrite' : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     await twttopo.download_dem(**kwargs)
     #
     #
-    kwargs = {'domain'             : domain,
-              'fname_dem_breached' : namelist.fnames.dem_breached,
+    kwargs = {'fname_dem_breached' : namelist.fnames.dem_breached,
               'fname_dem'          : namelist.fnames.dem,
               'verbose'            : namelist.options.verbose,
-              'verbose_wbe'        : namelist.options.verbose_wbe,
               'overwrite'          : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     twttopo.breach_dem(**kwargs)
     #
     #
@@ -62,8 +93,8 @@ async def calculate(fname_namelist):
               'fname_facc_ncells'  : namelist.fnames.facc_ncells,
               'fname_facc_sca'     : namelist.fnames.facc_sca,
               'verbose'            : namelist.options.verbose,
-              'verbose_wbe'        : namelist.options.verbose_wbe,
               'overwrite'          : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     twttopo.set_flow_acc(**kwargs)
     #
     #
@@ -71,16 +102,16 @@ async def calculate(fname_namelist):
               'facc_threshold_ncells' : namelist.options.facc_strm_thresh_ncells,
               'fname_strm_mask'       : namelist.fnames.stream_mask,
               'verbose'               : namelist.options.verbose,
-              'verbose_wbe'        : namelist.options.verbose_wbe,
               'overwrite'             : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     twttopo.calc_stream_mask(**kwargs)
     #
     #
     kwargs = {'fname_dem_breached' : namelist.fnames.dem_breached,
               'fname_slope'        : namelist.fnames.slope,
               'verbose'            : namelist.options.verbose,
-              'verbose_wbe'        : namelist.options.verbose_wbe,
               'overwrite'          : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     twttopo.calc_slope(**kwargs)
     #
     #
@@ -88,8 +119,8 @@ async def calculate(fname_namelist):
               'fname_twi'      : namelist.fnames.twi,
               'fname_slope'    : namelist.fnames.slope,
               'verbose'        : namelist.options.verbose,
-              'verbose_wbe'        : namelist.options.verbose_wbe,
               'overwrite'      : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     twttopo.calc_twi(**kwargs)
     #
     #
@@ -98,13 +129,16 @@ async def calculate(fname_namelist):
               'wtd_raw_dir'    : namelist.dirnames.wtd_raw,
               'verbose'        : namelist.options.verbose,
               'overwrite'      : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     twttopo.calc_twi_mean(**kwargs)
     #
     #
     kwargs = {'fname_texture'  : namelist.fnames.soil_texture,
               'domain'         : domain,
+              'domain_buf'     : domain_buf,
               'verbose'        : namelist.options.verbose,
               'overwrite'      : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     await twtsoils.set_soil_texture(**kwargs)
     #
     #
@@ -113,6 +147,7 @@ async def calculate(fname_namelist):
               'fname_dem'            : namelist.fnames.dem_breached,
               'verbose'              : namelist.options.verbose,
               'overwrite'            : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     twtsoils.set_soil_transmissivity(**kwargs)
     #
     #
@@ -120,6 +155,7 @@ async def calculate(fname_namelist):
               'domain'        : domain,
               'verbose'       : namelist.options.verbose,
               'overwrite'     : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     twtstreams.set_streams(**kwargs)
     #
     #
@@ -132,6 +168,7 @@ async def calculate(fname_namelist):
               'fname_twi_mean'            : namelist.fnames.twi_mean,
               'verbose'                   : namelist.options.verbose,
               'overwrite'                 : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     twtcalc.calculate_inundation(**kwargs)
     #
     #
@@ -142,6 +179,7 @@ async def calculate(fname_namelist):
               'fname_dem'                 : namelist.fnames.dem_breached,
               'verbose'                   : namelist.options.verbose,
               'overwrite'                 : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     fname_perc_inundated = twtcalc.calculate_summary_perc_inundated(**kwargs)
     #
     #
@@ -150,7 +188,12 @@ async def calculate(fname_namelist):
               'fname_dem'                 : namelist.fnames.dem_breached,
               'verbose'                   : namelist.options.verbose,
               'overwrite'                 : namelist.options.overwrite}
+    if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
     twtcalc.calculate_strm_permanence(**kwargs)
+    #
+    #
+    sys.stdout = sys.__stdout__
+    sys.stderr = sys.__stderr__
     return None
 
 def calculate_async_wrapper(**kwargs):
@@ -158,30 +201,35 @@ def calculate_async_wrapper(**kwargs):
     #
     #
     fname_namelist = kwargs.get('fname_namelist',None)
-    huc_id         = kwargs.get('domain_huc',    None)
+    domain = kwargs.get('domain',None)
+    overwrite = kwargs.get('overwrite',False)
+    if fname_namelist is None:
+        raise ValueError('calculate_async_wrapper requires fname_namelist in kwargs')
     #
     #
+    os.makedirs(os.path.dirname(fname_namelist), exist_ok=True)
     fname_verbose  = os.path.join(os.path.dirname(fname_namelist),
-                                  f"verbose_{str(huc_id)}_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.txt")
-    os.makedirs(os.path.dirname(fname_verbose),exist_ok=True)
+                                  f"verbose_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.txt")
     f = open(fname_verbose, "a", buffering=1)
     sys.stdout = f
     sys.stderr = f
     #
     #
-    try:
-        fname_namelist = kwargs.get('fname_namelist',None)
-        domain         = kwargs.get('domain',None)
-        fname_domain   = kwargs.get('fname_domain',None)
-        os.makedirs(os.path.dirname(fname_namelist),exist_ok=True)
-        os.makedirs(os.path.dirname(fname_domain),exist_ok=True)
+    if domain is not None:
+        fname_domain = os.path.join(os.path.dirname(fname_namelist),'input','domain.gpkg')
+        os.makedirs(os.path.dirname(fname_domain), exist_ok=True)
         domain.to_file(fname_domain, driver='GPKG')
-        del kwargs['fname_namelist']
-        del kwargs['domain']
-        del kwargs['fname_domain']
+    #
+    #
+    if 'fname_namelist' in kwargs: del kwargs['fname_namelist']
+    if 'domain' in kwargs: del kwargs['domain']
+    if not os.path.isfile(fname_namelist) or overwrite:
         with open(fname_namelist, 'w') as yamlf:
-            yaml.safe_dump(kwargs, yamlf, default_flow_style=False, sort_keys=False)
-        asyncio.run(calculate(fname_namelist))
+            yaml.dump(kwargs, yamlf, sort_keys=False) 
+    #
+    #
+    try:
+        asyncio.run(calculate(fname_namelist,fname_verbose))
     except Exception as e:
         print(str(e))
     #

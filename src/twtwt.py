@@ -1,4 +1,4 @@
-import os,sys,math,datetime,geopandas,hf_hydrodata,rasterio,numpy,twtnamelist,shapely
+import os,sys,math,datetime,geopandas,hf_hydrodata,rasterio,numpy,twtnamelist,rioxarray
 
 def _get_parflow_conus1_bbox(domain:geopandas.GeoDataFrame):
     latlon_tbounds = domain.to_crs(epsg=4326).total_bounds
@@ -69,7 +69,7 @@ def hf_query(**kwargs):
                       "temporal_resolution" : "daily",
                       "start_time"          : start_date_str,
                       "end_time"            : end_date_str}
-    if huc_id is not None: options_wtd['huc_id'] = huc_id
+    if huc_id is not None: options_wtd['huc_id']      = huc_id
     else:                  options_wtd['grid_bounds'] = _get_parflow_conus1_bbox(domain)
     hf_data = hf_hydrodata.get_gridded_data(options_wtd)
     if hf_data is None: raise Exception(f'hf_query call to hf_hydrodata.get_gridded_data failed - result is None')
@@ -92,6 +92,51 @@ def _set_download_flag(**kwargs):
             break
         idt += datetime.timedelta(days=1)
     return download_flag
+
+def break_conus1_tiffs(**kwargs):
+    domain        = kwargs.get('domain',        None)
+    dt_start      = kwargs.get('dt_start',      None)
+    dt_end        = kwargs.get('dt_end',        None)
+    wtd_in_dir    = kwargs.get('wtd_in_dir',    None)
+    wtd_out_dir   = kwargs.get('wtd_out_dir',   None)
+    verbose       = kwargs.get('verbose',       False)
+    overwrite     = kwargs.get('overwrite',     False)
+    fname_verbose = kwargs.get('fname_verbose', None)
+    if fname_verbose is not None:
+        f = open(fname_verbose, "a", buffering=1)
+        sys.stdout = f
+        sys.stderr = f
+    if verbose: print('calling break_conus1_tiffs')
+    if domain is None or not isinstance(domain,geopandas.GeoDataFrame):
+        raise Exception(f'break_conus1_tiffs missing required argument domain or is not a valid geopandas.GeoDataFrame')
+    if dt_start is None or not isinstance(dt_start,datetime.datetime):
+        raise Exception(f'break_conus1_tiffs missing required argument dt_start or is not a valid datetime')
+    if dt_end is None or not isinstance(dt_end,datetime.datetime):
+        raise Exception(f'break_conus1_tiffs missing required argument dt_end or is not a valid datetime')
+    if wtd_out_dir is None:
+        raise Exception(f'break_conus1_tiffs missing required argument wtd_out_dir')
+    if wtd_in_dir is None:
+        raise Exception(f'break_conus1_tiffs missing required argument wtd_in_dir')
+    if not os.path.isdir(wtd_in_dir):
+        raise Exception(f'break_conus1_tiffs argument wtd_in_dir is not a valid directory')
+    os.makedirs(wtd_out_dir,exist_ok=True)
+    conus1_proj, _, _, _ = _get_parflow_conus1_grid_info()
+    geom = domain.to_crs(conus1_proj).geometry.union_all()
+    idt = dt_start 
+    while idt <= dt_end:
+        fname_in = os.path.join(wtd_in_dir,f'conus1_baseline_mod_water_table_depth_{idt.strftime("%Y%m%d")}.tiff')
+        fname_out = os.path.join(wtd_out_dir,'wtd_'+idt.strftime('%Y%m%d')+'.tiff')
+        if not os.path.isfile(fname_out) or overwrite:
+            if not os.path.isfile(fname_in):
+                raise Exception(f'break_conus1_tiffs could not find conus1 file {fname_in}')
+            with rioxarray.open_rasterio(fname_in, masked=True, chunks={'band':1,'x':500,'y':500}) as riox_i:                    
+                wtd_dt = riox_i.rio.clip([geom],riox_i.rio.crs,from_disk=True)
+                wtd_dt.rio.to_raster(fname_out,compress='LZMA')
+        idt += datetime.timedelta(days=1)
+    if fname_verbose is not None:
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+        f.close()
 
 def download_hydroframe_data(**kwargs):
     domain    = kwargs.get('domain',    None)
@@ -198,3 +243,31 @@ def _get_parflow_conus2_grid_info():
     conus2_transform = rasterio.transform.Affine(1000.0,0.0,-2208000.30881173,0.0,1000.0,-1668999.65483222)
     conus2_shape     = (3256,4442)
     return conus2_proj,conus2_spatext,conus2_transform,conus2_shape
+
+def get_conus1_tiffs(**kwargs):
+    dt_start = kwargs.get('dt_start', None)
+    dt_end   = kwargs.get('dt_end',   None)
+    savedir  = kwargs.get('savedir',  None)
+    verbose  = kwargs.get('verbose',  False)
+    if verbose: print('calling get_conus1_tiffs')
+    if not os.path.isdir(savedir): os.makedirs(savedir,exist_ok=True)
+    options_wtd    = {"dataset"             : "conus1_baseline_mod",
+                      "temporal_resolution" : "daily"}
+    idatetime = dt_start
+    while idatetime <= dt_end:
+        if verbose: print(f' working on {idatetime.strftime('%Y-%m-%d')}')
+        options_wtd["start_time"] = idatetime.strftime('%Y-%m-%d')
+        options_wtd["end_time"] = idatetime.strftime('%Y-%m-%d')
+        fname = os.path.join(savedir,f'conus1_baseline_mod_water_table_depth_{idatetime.strftime('%Y%m%d')}.tiff')
+        if not os.path.isfile(fname):
+            c = 0
+            while c < 10:
+                try:
+                    hf_hydrodata.get_gridded_files(options_wtd,
+                                                variables=['water_table_depth'],
+                                                filename_template=os.path.join(savedir,"{dataset}_{variable}_{ymd}.tiff"),
+                                                verbose=True)
+                    break
+                except Exception as e:
+                    c += 1
+        idatetime += datetime.timedelta(days=1)

@@ -44,6 +44,8 @@ class Namelist:
         hf_hydrodata_un         = None
         hf_hydrodata_pin        = None
         dem_rez                 = None
+        conus1_download_dir     = None
+        domain_buf_dist_m       = 1000
 
     def __init__(self,filename:str):
         self._init_vars()
@@ -70,6 +72,7 @@ class Namelist:
 
     def _set_f_names(self):
         self.fnames.domain              = os.path.join(self.dirnames.input, 'domain.gpkg')
+        self.fnames.domain_buf          = os.path.join(self.dirnames.input, 'domain_buf.gpkg')
         self.fnames.dem                 = os.path.join(self.dirnames.input, 'dem.tiff')
         self.fnames.dem_breached        = os.path.join(self.dirnames.input, 'dem_breached.tiff')
         self.fnames.twi                 = os.path.join(self.dirnames.input, 'twi.tiff')
@@ -103,7 +106,7 @@ class Namelist:
         #
         names_domain = ['domain_huc','domain_latlon','domain_bbox']
         if len([name for name in names_domain if name in userinput]) == 0:
-            sys.exit(f'ERROR at least one of the required domain variables ({', '.join(names_domain)}) not found {fname_yaml_input}')
+            print(f'WARNING at least one of the required domain variables ({', '.join(names_domain)}) not found {fname_yaml_input}')
         name_var = 'domain_huc'
         if name_var in userinput:
             self.options.domain_hucid = userinput[name_var]
@@ -225,3 +228,13 @@ class Namelist:
             self.options.verbose_wbe = True
         else:
             self.options.verbose_wbe = False
+        #
+        #
+        name_var = 'conus1_download_dir'
+        if name_var in userinput:
+            try:
+                self.options.conus1_download_dir = userinput[name_var]
+                if not os.path.isdir(self.options.conus1_download_dir):
+                    sys.exit(f'ERROR specified conus1 download directory {self.options.conus1_download_dir} does not exist {fname_yaml_input}')
+            except ValueError:
+                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
