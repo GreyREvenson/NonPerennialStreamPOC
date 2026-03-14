@@ -4,7 +4,7 @@ import rasterio
 import py3dep
 import rioxarray
 from geocube.api.core import make_geocube
-from whitebox_workflows import WbEnvironment
+from whitebox.whitebox_tools import WhiteboxTools as wbt
 
 async def download_dem(**kwargs):
     domain        = kwargs.get('domain',    None)
@@ -74,13 +74,8 @@ def breach_dem(**kwargs):
     fname_dem_breached = kwargs.get('fname_dem_breached', None)
     fname_dem          = kwargs.get('fname_dem',          None)
     verbose            = kwargs.get('verbose',            False)
-    verbose_wbe        = kwargs.get('verbose_wbe',        verbose)
     overwrite          = kwargs.get('overwrite',          False)
     fname_verbose      = kwargs.get('fname_verbose',         None)
-    if fname_verbose is not None:
-        f = open(fname_verbose, "a", buffering=1)
-        sys.stdout = f
-        sys.stderr = f
     if verbose: print('calling breach_dem')
     if fname_dem is None:
         raise KeyError('breach_dem missing required argument fname_dem')
@@ -88,24 +83,13 @@ def breach_dem(**kwargs):
         raise ValueError(f'breach_dem could not find fname_dem {fname_dem}')
     if not os.path.isfile(fname_dem_breached) or overwrite:
         if verbose: print(f' using whitebox to breach dem and writing to {fname_dem_breached}')
-        wbe = WbEnvironment()
-        if verbose_wbe: wbe.verbose = True
-        else:           wbe.verbose = False
-        if fname_verbose is not None:
-            sys.stdout = f
-            sys.stderr = f
-        wbe.working_directory = os.path.dirname(fname_dem)
-        dem = wbe.read_raster(fname_dem)
-        dem_breached = wbe.breach_depressions_least_cost(dem=dem,
-                                                         fill_deps=False,
-                                                         max_dist=1000)
-        wbe.write_raster(dem_breached, fname_dem_breached, compress=True)
+        wbt.breach_depressions_least_cost(
+            dem=fname_dem,
+            output=fname_dem_breached,
+            max_dist=1000
+        )
     else:
         if verbose: print(f' using existing breached dem {fname_dem_breached}')
-    if fname_verbose is not None:
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-        f.close()
 
 def set_flow_acc(**kwargs):
     fname_dem_breached = kwargs.get('fname_dem_breached', None)
@@ -114,49 +98,24 @@ def set_flow_acc(**kwargs):
     verbose            = kwargs.get('verbose',            False)
     overwrite          = kwargs.get('overwrite',          False)
     fname_verbose      = kwargs.get('fname_verbose',         None)
-    if fname_verbose is not None:
-        f = open(fname_verbose, "a", buffering=1)
-        sys.stdout = f
-        sys.stderr = f
     if verbose: print(f'calling set_flow_acc')
-    if fname_dem_breached is None:
-        raise KeyError(f'set_flow_acc missing required argument set_flow_acc')
-    if not os.path.isfile(fname_dem_breached):
-        raise ValueError(f'set_flow_acc could not find fname_dem_breached {fname_dem_breached}')
-    if fname_facc_ncells is None and fname_facc_sca is None:
-        raise KeyError(f'set_flow_acc missing required argument fname_facc_ncells or fname_facc_sca')
     if not os.path.isfile(fname_facc_ncells) or overwrite:
         if verbose: print(f' using whitebox to calculate flow accumulation (n cells), writing to {fname_facc_ncells}')
-        wbe = WbEnvironment()
-        if verbose: wbe.verbose = True
-        else:       wbe.verbose = False
-        if fname_verbose is not None:
-            sys.stdout = f
-            sys.stderr = f
-        wbe.working_directory = os.path.dirname(fname_dem_breached)
-        facc_ncells = wbe.dinf_flow_accum(dem=wbe.read_raster(fname_dem_breached),
-                                          out_type='cells')
-        wbe.write_raster(facc_ncells, fname_facc_ncells, compress=True)
+        wbt.d_inf_flow_accumulation(i        = fname_dem_breached,
+                                    output   = fname_facc_ncells,
+                                    out_type = 'cells',
+                                    log      = False)
     else:
         if verbose: print(f' using existing flow accumulation (ncells) file {fname_facc_ncells}')
     if not os.path.isfile(fname_facc_sca) or overwrite:
         if verbose: print(f' using whitebox to calculate flow accumulation (sca), writing to {fname_facc_sca}')
-        wbe = WbEnvironment()
-        if verbose:     wbe.verbose = True
-        else:           wbe.verbose = False
-        if fname_verbose is not None:
-            sys.stdout = f
-            sys.stderr = f
-        wbe.working_directory = os.path.dirname(fname_dem_breached)
-        facc_sca = wbe.dinf_flow_accum(dem=wbe.read_raster(fname_dem_breached),
-                                       out_type='sca')
-        wbe.write_raster(facc_sca, fname_facc_sca, compress=True)
+        wbt.d_inf_flow_accumulation(i        = fname_dem_breached,
+                                    output   = fname_facc_sca,
+                                    out_type = 'sca',
+                                    log      = False)
+
     else:
         if verbose: print(f' using existing flow accumulation (sca) file {fname_facc_sca}')
-    if fname_verbose is not None:
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-        f.close()
 
 def calc_stream_mask(**kwargs):
     ##TODO fnames might not be os.path.isfile()
@@ -168,58 +127,24 @@ def calc_stream_mask(**kwargs):
     facc_threshold_sca    = kwargs.get('facc_threshold_sca',   None)
     fname_strm_mask       = kwargs.get('fname_strm_mask',      None)
     fname_verbose         = kwargs.get('fname_verbose',         None)
-    if fname_verbose is not None:
-        f = open(fname_verbose, "a", buffering=1)
-        sys.stdout = f
-        sys.stderr = f
     if verbose: print('calling calc_stream_mask')
-    if fname_facc_ncells is None and fname_facc_sca is None:
-        raise KeyError(f'calc_stream_mask missing required argument fname_facc_ncells or fname_facc_sca')
-    if facc_threshold_ncells is None and facc_threshold_sca is None:
-        raise KeyError(f'calc_stream_mask missing required argument facc_threshold_ncells or facc_threshold_sca') 
-    if fname_facc_ncells is None and facc_threshold_ncells is not None:
-        raise KeyError(f'calc_stream_mask missing required argument fname_facc_ncells while given facc_threshold_ncells')
-    if fname_facc_ncells is not None and facc_threshold_ncells is None:
-        raise KeyError(f'calc_stream_mask missing required argument facc_threshold_ncells while given fname_facc_ncells')
-    if fname_facc_sca is None and facc_threshold_sca is not None:
-        raise KeyError(f'calc_stream_mask missing required argument fname_facc_sca while given facc_threshold_sca')
-    if fname_facc_sca is not None and facc_threshold_sca is None:
-        raise KeyError(f'calc_stream_mask missing required argument facc_threshold_sca while given fname_facc_sca')
     if not os.path.isfile(fname_strm_mask) or overwrite:
         if os.path.isfile(fname_facc_ncells):
             if verbose: print(f' setting stream mask using fname_facc_ncells {fname_facc_ncells} and facc_threshold_ncells {facc_threshold_ncells}')
-            wbe = WbEnvironment()
-            if verbose:     wbe.verbose = True
-            else:           wbe.verbose = False
-            if fname_verbose is not None:
-                sys.stdout = f
-                sys.stderr = f
-            wbe.working_directory = os.path.dirname(fname_facc_ncells)
-            strm_mask_facc_ncells = wbe.extract_streams(flow_accumulation=wbe.read_raster(fname_facc_ncells),
-                                                        threshold=facc_threshold_ncells,
-                                                        zero_background=True)
-            wbe.write_raster(strm_mask_facc_ncells,fname_strm_mask,compress=True)
+            wbt.extract_streams(flow_accum      = fname_facc_ncells,
+                                output          = fname_strm_mask,
+                                threshold       = facc_threshold_ncells,
+                                zero_background = True)
         elif os.path.isfile(fname_facc_sca):
             if verbose: print(f' setting stream mask using fname_facc_sca {fname_facc_sca} and facc_threshold_sca {facc_threshold_sca}')
-            wbe = WbEnvironment()
-            if verbose:     wbe.verbose = True
-            else:           wbe.verbose = False
-            if fname_verbose is not None:
-                sys.stdout = f
-                sys.stderr = f
-            wbe.working_directory = os.path.dirname(fname_facc_sca)
-            strm_mask_facc_sca = wbe.extract_streams(flow_accumulation=wbe.read_raster(fname_facc_sca),
-                                                        threshold=facc_threshold_sca,
-                                                        zero_background=True)
-            wbe.write_raster(strm_mask_facc_sca,fname_strm_mask,compress=True)
+            wbt.extract_streams(flow_accum      = fname_facc_sca,
+                                output          = fname_strm_mask,
+                                threshold       = facc_threshold_sca,
+                                zero_background = True)
         else:
             raise Exception(f'calc_stream_mask did not find valid flow accumulation file fname_facc_ncells {fname_facc_ncells} or fname_facc_sca {fname_facc_sca}')
     else:
         if verbose: print(f' using existing stream mask {fname_strm_mask}')
-    if fname_verbose is not None:
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-        f.close()
 
 def calc_slope(**kwargs):
     fname_dem_breached = kwargs.get('fname_dem_breached', None)
@@ -227,31 +152,13 @@ def calc_slope(**kwargs):
     verbose            = kwargs.get('verbose',            False)
     overwrite          = kwargs.get('overwrite',          False)
     fname_verbose      = kwargs.get('fname_verbose',         None)
-    if fname_verbose is not None:
-        f = open(fname_verbose, "a", buffering=1)
-        sys.stdout = f
-        sys.stderr = f
     if verbose: print(f'calling calc_slope')
-    if fname_dem_breached is None or not os.path.isfile(fname_dem_breached):
-        raise ValueError(f'calc_slope missing required argument fname_dem_breached is missing or invalid file {fname_dem_breached}')
     if not os.path.isfile(fname_slope) or overwrite:
-        if verbose: print(f' using whitebox workflows to calculate {fname_slope} from {fname_dem_breached}')
-        wbe = WbEnvironment()
-        if verbose:     wbe.verbose = True
-        else:           wbe.verbose = False
-        if fname_verbose is not None:
-            sys.stdout = f
-            sys.stderr = f
-        wbe.working_directory = os.path.dirname(fname_dem_breached)
-        slope = wbe.slope(dem = wbe.read_raster(fname_dem_breached),
-                          units = 'degrees')
-        wbe.write_raster(slope,fname_slope,compress=True)
+        wbt.slope(dem    = fname_dem_breached,
+                  output = fname_slope,
+                  units  = 'degrees')
     else:
         if verbose: print(f' using existing slope file {fname_slope}')
-    if fname_verbose is not None:
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-        f.close()
 
 def calc_twi(**kwargs):
     fname_facc_sca     = kwargs.get('fname_facc_sca', None)
@@ -260,35 +167,14 @@ def calc_twi(**kwargs):
     verbose            = kwargs.get('verbose',        False)
     overwrite          = kwargs.get('overwrite',      False)
     fname_verbose      = kwargs.get('fname_verbose',         None)
-    if fname_verbose is not None:
-        f = open(fname_verbose, "a", buffering=1)
-        sys.stdout = f
-        sys.stderr = f
     if verbose: print('calling calc_twi')
-    if fname_facc_sca is None or not os.path.isfile(fname_facc_sca):
-        raise ValueError(f'calc_twi missing required argument fname_facc_sca or the argument {fname_facc_sca} is not a valid file')        
-    if fname_slope is None or not os.path.isfile(fname_slope):
-        raise ValueError(f'calc_twi missing required argument fname_slope or the argument {fname_slope} is not a valid file')        
-    if fname_twi is None:
-        raise KeyError(f'calc_twi missing required argument fname_twi')
     if not os.path.isfile(fname_twi) or overwrite:
         if verbose: print(f' using whitebox workflows to calculate {fname_twi}')
-        wbe = WbEnvironment()
-        if verbose:     wbe.verbose = True
-        else:           wbe.verbose = False
-        if fname_verbose is not None:
-            sys.stdout = f
-            sys.stderr = f
-        wbe.working_directory = os.path.dirname(fname_facc_sca)
-        twi = wbe.wetness_index(specific_catchment_area = wbe.read_raster(fname_facc_sca),
-                                slope = wbe.read_raster(fname_slope))
-        wbe.write_raster(twi,fname_twi,compress=True)
+        wbt.wetness_index(sca    = fname_facc_sca,
+                          slope  = fname_slope,
+                          output = fname_twi)
     else:
         if verbose: print(f' found existing TWI file {fname_twi}')
-    if fname_verbose is not None:
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-        f.close()
 
 def calc_twi_mean(**kwargs):
     fname_twi          = kwargs.get('fname_twi',      None)
@@ -297,15 +183,7 @@ def calc_twi_mean(**kwargs):
     verbose            = kwargs.get('verbose',        False)
     overwrite          = kwargs.get('overwrite',      False)
     fname_verbose      = kwargs.get('fname_verbose',         None)
-    if fname_verbose is not None:
-        f = open(fname_verbose, "a", buffering=1)
-        sys.stdout = f
-        sys.stderr = f
     if verbose: print('calling calc_twi_mean')
-    if fname_twi is None or not os.path.isfile(fname_twi):
-        raise ValueError(f'calc_calc_twi_meanmean_twi missing required argument fname_twi or argument {fname_twi} is not valid file')
-    if wtd_raw_dir is None or not os.path.isdir(wtd_raw_dir):
-        raise ValueError(f'calc_calc_twi_meanmean_twi missing required argument wtd_raw_dir or argument {wtd_raw_dir} is not valid file')
     if not os.path.isfile(fname_twi_mean) or overwrite:
         fname_example_wtd_raw = [fn for fn in os.listdir(wtd_raw_dir) if str(fn).endswith('.tiff')][0]
         fname_example_wtd_raw = os.path.join(wtd_raw_dir,fname_example_wtd_raw)
@@ -318,10 +196,7 @@ def calc_twi_mean(**kwargs):
             twi_mean.rio.to_raster(fname_twi_mean,compress=True)
     else:
         if verbose: print(f' found existing mean TWI file {fname_twi_mean}')
-    if fname_verbose is not None:
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-        f.close()
+
 
 
 
