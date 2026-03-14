@@ -4,14 +4,15 @@ def set_domain(**kwargs):
     fname_domain  = kwargs.get('fname_domain',  None)
     verbose       = kwargs.get('verbose',       False)
     overwrite     = kwargs.get('overwrite',     False)
-    domain_id     = kwargs.get('domain_id',     None)
+    domain_hucid     = kwargs.get('domain_hucid',     None)
     domain_bbox   = kwargs.get('domain_bbox',   None)
     domain_latlon = kwargs.get('domain_latlon', None)
+    conus1_domain = kwargs.get('conus1_domain', None)
     if verbose: print('calling set_domain')
     if fname_domain is None: 
         raise ValueError(f'_set_domain missing required argument fname_domain')
     if not os.path.isfile(fname_domain) or overwrite:
-        if domain_id is not None:
+        if domain_hucid is not None:
             domain = _set_domain_byhucid(**kwargs)
         elif domain_bbox is not None:
             domain = _set_domain_bybbox(**kwargs)
@@ -19,6 +20,10 @@ def set_domain(**kwargs):
             domain = _set_domain_bylatlonandhuclvl(**kwargs)
         else:
             raise Exception(f'_set_domain could not set domain from arguments')
+        if conus1_domain is not None:
+            conus1_domain = geopandas.read_file(conus1_domain)
+            domain = geopandas.clip(gdf=domain,mask=conus1_domain.to_crs(domain.crs))
+            domain.to_file(fname_domain, driver='GPKG')
     else:
         print(f' using existing domain {fname_domain}')
         domain = geopandas.read_file(fname_domain)
@@ -47,18 +52,18 @@ def set_domain_buf(**kwargs):
 
 def _set_domain_byhucid(**kwargs):
     fname_domain = kwargs.get('fname_domain', None)
-    domain_id    = kwargs.get('domain_id',    None)
+    domain_hucid    = kwargs.get('domain_hucid',    None)
     verbose      = kwargs.get('verbose',      False)
     if verbose: print('_set_domain_byhucid')
-    if domain_id is None: 
-        raise ValueError(f'_set_domain_byhucid missing required argument domain_id')
-    if not isinstance(domain_id,str): 
-        raise TypeError('_set_domain_byhucid domain_id must be type str') 
-    if len(domain_id) not in (2,4,6,8,10,12):
-        raise ValueError(f'_set_domain_byhucid domain_id {domain_id} is invalid, must be of len 2, 4, 6, 8, 10, 12')
-    colnam = f'huc{len(domain_id)}'
+    if domain_hucid is None: 
+        raise ValueError(f'_set_domain_byhucid missing required argument domain_hucid')
+    if not isinstance(domain_hucid,str): 
+        raise TypeError('_set_domain_byhucid domain_hucid must be type str') 
+    if len(domain_hucid) not in (2,4,6,8,10,12):
+        raise ValueError(f'_set_domain_byhucid domain_hucid {domain_hucid} is invalid, must be of len 2, 4, 6, 8, 10, 12')
+    colnam = f'huc{len(domain_hucid)}'
     hucs   = pygeohydro.WBD(colnam) 
-    domain = hucs.byids(colnam, domain_id, return_geom=True)
+    domain = hucs.byids(colnam, domain_hucid, return_geom=True)
     domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
     domain = domain.rename(columns = {colnam : 'domain_id'})
     os.makedirs(name=os.path.dirname(fname_domain),exist_ok=True)
