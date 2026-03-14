@@ -78,15 +78,15 @@ def hf_query(**kwargs):
         raise Exception(f'hf_hydrodata returned data of unexpected time length or invalid structure')
     return hf_data
 
-def _set_download_flag(**kwargs):
+def set_wtd_get_flag(**kwargs):
     dt_start  = kwargs.get('dt_start',  None)
     dt_end    = kwargs.get('dt_end',    None)
-    savedir   = kwargs.get('savedir',   None)
+    dir_wtd   = kwargs.get('dir_wtd',   None)
     overwrite = kwargs.get('overwrite', False)
     download_flag = False
     idt = dt_start
     while idt <= dt_end:
-        fname = os.path.join(savedir,'wtd_'+idt.strftime('%Y%m%d')+'.tiff')
+        fname = os.path.join(dir_wtd,'wtd_'+idt.strftime('%Y%m%d')+'.tiff')
         if not os.path.isfile(fname) or overwrite:
             download_flag = True
             break
@@ -142,7 +142,7 @@ def download_hydroframe_data(**kwargs):
     domain    = kwargs.get('domain',    None)
     dt_start  = kwargs.get('dt_start',  None)
     dt_end    = kwargs.get('dt_end',    None)
-    savedir   = kwargs.get('savedir',   None)
+    dir_wtd   = kwargs.get('dir_wtd',   None)
     verbose   = kwargs.get('verbose',   False)
     overwrite = kwargs.get('overwrite', False)
     if verbose: print('calling download_hydroframe_data')
@@ -152,54 +152,50 @@ def download_hydroframe_data(**kwargs):
         raise Exception(f'download_hydroframe_data missing required argument dt_start or is not a valid datetime')
     if dt_end is None or not isinstance(dt_end,datetime.datetime):
         raise Exception(f'download_hydroframe_data missing required argument dt_end or is not a valid datetime')
-    if savedir is None:
-        raise Exception(f'download_hydroframe_data missing required argument savedir')
-    if not os.path.isdir(savedir): os.makedirs(savedir,exist_ok=True)
-    download = _set_download_flag(**kwargs)
-    if download:
-        if verbose: print(f' using hf_hydrodata to download parflow water table depth simulations to {savedir}')
-        conus1_proj, _, conus1_transform, conus1_shape = _get_parflow_conus1_grid_info()
-        domain        = geopandas.GeoDataFrame(domain.drop(columns=['geometry']), 
-                                               geometry=domain.to_crs(conus1_proj).buffer(distance=1000),              
-                                               crs=conus1_proj)
-        kwargs['domain']   = domain # overwriting with buffered gdf
-        hf_data            = hf_query(**kwargs)
-        hf_conus1grid_temp = numpy.empty(shape=conus1_shape,dtype=numpy.float64)
-        grid_bounds        = _get_parflow_conus1_bbox(domain)
-        for i in range(hf_data.shape[0]):
-            idt = dt_start + datetime.timedelta(days=i)
-            fname = os.path.join(savedir,'wtd_'+idt.strftime('%Y%m%d')+'.tiff')
-            if not os.path.isfile(fname) or overwrite:
-                hf_conus1grid_temp[grid_bounds[1]:grid_bounds[3],
-                                   grid_bounds[0]:grid_bounds[2]] = hf_data[i,:,:]
-                with rasterio.io.MemoryFile() as memfile:
-                    hf_conus1data = memfile.open(driver    = "GTiff", 
-                                                height    = hf_conus1grid_temp.shape[0], 
-                                                width     = hf_conus1grid_temp.shape[1], 
-                                                crs       = conus1_proj, 
-                                                transform = conus1_transform, 
-                                                nodata    = numpy.nan, 
-                                                count     = 1, 
-                                                dtype     = numpy.float64)
-                    hf_conus1data.write(hf_conus1grid_temp,1)
-                    wtd_data, wtd_transform = rasterio.mask.mask(dataset    = hf_conus1data, 
-                                                                shapes      = [domain.geometry.union_all()], 
-                                                                crop        = True, 
-                                                                all_touched = True, 
-                                                                filled      = True, 
-                                                                pad         = True,
-                                                                nodata      = numpy.nan)
-                    wtd_meta = hf_conus1data.meta
-                    wtd_meta.update({"driver"   : "GTiff",
-                                    "height"    : wtd_data.shape[1],
-                                    "width"     : wtd_data.shape[2],
-                                    "transform" : wtd_transform, 
-                                    "nodata"    : numpy.nan})
-                    with rasterio.open(fname,'w',**wtd_meta) as wtd_dataset:
-                        wtd_dataset.write(wtd_data[0,:,:],1)
-        del hf_data, hf_conus1grid_temp
-    else:
-        if verbose: print(f' using existing parflow simulation data in {savedir}')
+    if dir_wtd is None:
+        raise Exception(f'download_hydroframe_data missing required argument dir_wtd')
+    if not os.path.isdir(dir_wtd): os.makedirs(dir_wtd,exist_ok=True)
+    if verbose: print(f' using hf_hydrodata to download parflow water table depth simulations to {dir_wtd}')
+    conus1_proj, _, conus1_transform, conus1_shape = _get_parflow_conus1_grid_info()
+    domain        = geopandas.GeoDataFrame(domain.drop(columns=['geometry']), 
+                                            geometry=domain.to_crs(conus1_proj).buffer(distance=1000),              
+                                            crs=conus1_proj)
+    kwargs['domain']   = domain # overwriting with buffered gdf
+    hf_data            = hf_query(**kwargs)
+    hf_conus1grid_temp = numpy.empty(shape=conus1_shape,dtype=numpy.float64)
+    grid_bounds        = _get_parflow_conus1_bbox(domain)
+    for i in range(hf_data.shape[0]):
+        idt = dt_start + datetime.timedelta(days=i)
+        fname = os.path.join(dir_wtd,'wtd_'+idt.strftime('%Y%m%d')+'.tiff')
+        if not os.path.isfile(fname) or overwrite:
+            hf_conus1grid_temp[grid_bounds[1]:grid_bounds[3],
+                                grid_bounds[0]:grid_bounds[2]] = hf_data[i,:,:]
+            with rasterio.io.MemoryFile() as memfile:
+                hf_conus1data = memfile.open(driver    = "GTiff", 
+                                            height    = hf_conus1grid_temp.shape[0], 
+                                            width     = hf_conus1grid_temp.shape[1], 
+                                            crs       = conus1_proj, 
+                                            transform = conus1_transform, 
+                                            nodata    = numpy.nan, 
+                                            count     = 1, 
+                                            dtype     = numpy.float64)
+                hf_conus1data.write(hf_conus1grid_temp,1)
+                wtd_data, wtd_transform = rasterio.mask.mask(dataset    = hf_conus1data, 
+                                                            shapes      = [domain.geometry.union_all()], 
+                                                            crop        = True, 
+                                                            all_touched = True, 
+                                                            filled      = True, 
+                                                            pad         = True,
+                                                            nodata      = numpy.nan)
+                wtd_meta = hf_conus1data.meta
+                wtd_meta.update({"driver"   : "GTiff",
+                                "height"    : wtd_data.shape[1],
+                                "width"     : wtd_data.shape[2],
+                                "transform" : wtd_transform, 
+                                "nodata"    : numpy.nan})
+                with rasterio.open(fname,'w',**wtd_meta) as wtd_dataset:
+                    wtd_dataset.write(wtd_data[0,:,:],1)
+    del hf_data, hf_conus1grid_temp
 
 def _get_latlon_parflow_grid(grid_minx,grid_miny,grid_maxx,grid_maxy):
     """Get latlon bbox from ParFlow CONUS1 grid xy bbox"""
