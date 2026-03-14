@@ -27,18 +27,25 @@ async def calculate(fname_namelist,fname_verbose):
     namelist = twtnamelist.Namelist(filename=fname_namelist)
     #
     #
+    if namelist.options.usedask:
+        chunks = {'band':1, 'x': 1000, 'y': 1000}
+        if namelist.options.verbose:
+            print(f'using dask with chunks {chunks}')
+    #
+    #
     kwargs = {'fname_domain' : namelist.fnames.domain,
               'verbose'      : namelist.options.verbose,
-              'overwrite'    : namelist.options.overwrite}
+              'overwrite'    : namelist.options.overwrite,
+              'conus1_domain': namelist.fnames.conus1_domain}
     if namelist.options.domain_hucid is not None:
-        kwargs.update({'domain_id'     : namelist.options.domain_hucid})
+        kwargs.update({'domain_hucid'     : namelist.options.domain_hucid})
     elif namelist.options.domain_latlon is not None:
         kwargs.update({'domain_latlon' : namelist.options.domain_latlon})
     elif namelist.options.domain_bbox is not None:
         kwargs.update({'domain_bbox'   : namelist.options.domain_bbox})
     else:
         if not os.path.isfile(namelist.fnames.domain):
-            raise ValueError(f'calculate_async_wrapper could not set domain from namelist options, and domain file {namelist.fnames.domain} does not exist')
+            raise ValueError(f'calculate could not set domain from namelist options, and domain file {namelist.fnames.domain} does not exist')
     domain = twtdomain.set_domain(**kwargs)
     #
     #
@@ -50,24 +57,31 @@ async def calculate(fname_namelist,fname_verbose):
     domain_buf = twtdomain.set_domain_buf(**kwargs)
     #
     #
-    if namelist.options.conus1_download_dir is None:
+    kwargs = {'dt_start'  : namelist.time.start_date,
+              'dt_end'    : namelist.time.end_date,
+              'dir_wtd'   : namelist.dirnames.wtd_raw,
+              'verbose'   : namelist.options.verbose}
+    wtd_get_flag = twtwt.set_wtd_get_flag(**kwargs)
+    if namelist.options.verbose and not wtd_get_flag:
+        print('wtd_get_flag is False - skipping download/break of water table depth data')
+    if wtd_get_flag and namelist.options.conus1_download_dir is None:
         kwargs = {'dt_start'  : namelist.time.start_date,
-                'dt_end'    : namelist.time.end_date,
-                'savedir'   : namelist.dirnames.wtd_raw,
-                'domain'    : domain,
-                'verbose'   : namelist.options.verbose,
-                'overwrite' : namelist.options.overwrite}
+                  'dt_end'    : namelist.time.end_date,
+                  'dir_wtd'   : namelist.dirnames.wtd_raw,
+                  'domain'    : domain,
+                  'verbose'   : namelist.options.verbose,
+                  'overwrite' : namelist.options.overwrite}
         if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
         hf_hydrodata.register_api_pin(namelist.options.hf_hydrodata_un, namelist.options.hf_hydrodata_pin)
         twtwt.download_hydroframe_data(**kwargs)
-    else:
+    elif wtd_get_flag and namelist.options.conus1_download_dir is not None:
         kwargs = {'dt_start'  : namelist.time.start_date,
-                'dt_end'    : namelist.time.end_date,
-                'wtd_in_dir'   : namelist.options.conus1_download_dir,
-                'wtd_out_dir': namelist.dirnames.wtd_raw,
-                'domain'    : domain,
-                'verbose'   : namelist.options.verbose,
-                'overwrite' : namelist.options.overwrite}
+                  'dt_end'    : namelist.time.end_date,
+                  'wtd_in_dir': namelist.options.conus1_download_dir,
+                  'wtd_out_dir': namelist.dirnames.wtd_raw,
+                  'domain'    : domain,
+                  'verbose'   : namelist.options.verbose,
+                  'overwrite' : namelist.options.overwrite}
         if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
         twtwt.break_conus1_tiffs(**kwargs)
     #
@@ -169,6 +183,7 @@ async def calculate(fname_namelist,fname_verbose):
               'verbose'                   : namelist.options.verbose,
               'overwrite'                 : namelist.options.overwrite}
     if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
+    if namelist.options.usedask:  kwargs.update({'chunks':chunks})
     twtcalc.calculate_inundation(**kwargs)
     #
     #
@@ -180,15 +195,17 @@ async def calculate(fname_namelist,fname_verbose):
               'verbose'                   : namelist.options.verbose,
               'overwrite'                 : namelist.options.overwrite}
     if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
+    if namelist.options.usedask: kwargs.update({'chunks':chunks})
     fname_perc_inundated = twtcalc.calculate_summary_perc_inundated(**kwargs)
     #
     #
-    kwargs = {'fname_perc_inundation'     : fname_perc_inundated,
-              'fname_strm_mask'           : namelist.fnames.stream_mask,
-              'fname_dem'                 : namelist.fnames.dem_breached,
-              'verbose'                   : namelist.options.verbose,
-              'overwrite'                 : namelist.options.overwrite}
+    #kwargs = {'fname_perc_inundation'     : fname_perc_inundated,
+    #          'fname_strm_mask'           : namelist.fnames.stream_mask,
+    #          'fname_dem'                 : namelist.fnames.dem_breached,
+    #          'verbose'                   : namelist.options.verbose,
+    #          'overwrite'                 : namelist.options.overwrite}
     if fname_verbose is not None: kwargs.update({'fname_verbose':fname_verbose})
+    if namelist.options.usedask:  kwargs.update({'chunks':chunks})
     twtcalc.calculate_strm_permanence(**kwargs)
     #
     #
@@ -226,6 +243,36 @@ def calculate_async_wrapper(**kwargs):
     if not os.path.isfile(fname_namelist) or overwrite:
         with open(fname_namelist, 'w') as yamlf:
             yaml.dump(kwargs, yamlf, sort_keys=False) 
+    #
+    #
+    try:
+        asyncio.run(calculate(fname_namelist,fname_verbose))
+    except Exception as e:
+        print(str(e))
+    #
+    #
+    sys.stdout = sys.__stdout__
+    sys.stderr = sys.__stderr__
+    f.close()
+    #
+    #
+    return 
+
+def calculate_async_wrapper2(**kwargs):
+    """async wrapper for calculation (for multiprocessing applications)"""
+    #
+    #
+    fname_namelist = kwargs.get('fname_namelist',None)
+    if fname_namelist is None:
+        raise ValueError('calculate_async_wrapper requires fname_namelist in kwargs')
+    #
+    #
+    #os.makedirs(os.path.dirname(fname_namelist), exist_ok=True)
+    fname_verbose  = os.path.join(os.path.dirname(fname_namelist),
+                                  f"verbose_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.txt")
+    f = open(fname_verbose, "a", buffering=1)
+    sys.stdout = f
+    sys.stderr = f
     #
     #
     try:
