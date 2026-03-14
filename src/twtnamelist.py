@@ -18,6 +18,7 @@ class Namelist:
 
     class FileNames:
         domain                  = None
+        domain_buf              = None
         twi                     = None
         twi_mean                = None
         soil_texture            = None
@@ -29,6 +30,7 @@ class Namelist:
         facc_sca                = None
         stream_mask             = None
         slope                   = None
+        conus1_domain           = None
 
     class Options:
         domain_hucid            = None    
@@ -46,6 +48,7 @@ class Namelist:
         dem_rez                 = None
         conus1_download_dir     = None
         domain_buf_dist_m       = 1000
+        usedask                 = False
 
     def __init__(self,filename:str):
         self._init_vars()
@@ -238,3 +241,20 @@ class Namelist:
                     sys.exit(f'ERROR specified conus1 download directory {self.options.conus1_download_dir} does not exist {fname_yaml_input}')
             except ValueError:
                 sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
+        #
+        #
+        name_var = 'conus1_domain'
+        if name_var in userinput:
+            try:
+                self.fnames.conus1_domain = userinput[name_var]
+                if not os.path.isfile(self.fnames.conus1_domain):
+                    sys.exit(f'ERROR specified conus1 domain file {self.fnames.conus1_domain} does not exist {fname_yaml_input}')
+            except ValueError:
+                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
+        #
+        #
+        name_var = 'usedask'
+        if name_var in userinput and str(userinput[name_var]).upper().find('TRUE') != -1:
+            self.options.usedask = True
+
+        
