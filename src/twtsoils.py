@@ -16,10 +16,13 @@ async def set_soil_texture(**kwargs):
     if verbose: print(f'calling set_soil_texture')
     if not os.path.isfile(fname_texture) or overwrite:
         if verbose: print(f' using soildb to download soil texture and saving to {fname_texture}')
-        response = await soildb.spatial_query(geometry=domain_buf.to_crs(epsg=4326).geometry.union_all(),
-                                        table="mupolygon",
-                                        spatial_relation="intersects",
-                                        return_type="spatial")
+        #geom = domain_buf.to_crs(epsg=4326).geometry.union_all()
+        xmin, ymin, xmax, ymax = domain_buf.to_crs(epsg=4326).total_bounds
+        bbox = {"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax}
+        response = await soildb.spatial_query(geometry=bbox,
+                                              table="mupolygon",
+                                              spatial_relation="intersects",
+                                              return_type="spatial")
         soilsgdf = response.to_geodataframe()
         response = await soildb.fetch_by_keys(soilsgdf.mukey.unique().tolist(), 
                                         "component",
