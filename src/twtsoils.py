@@ -1,18 +1,31 @@
-import os,numpy,geopandas,soiltexture,soildb,rioxarray,sys
+import os,numpy,geopandas,soiltexture,soildb,rioxarray,sys,subprocess,sqlite3,pyogrio
 from geocube.api.core import make_geocube
 #from urllib import response
 
-async def set_soil_texture(**kwargs):
+def break_soil_texture(**kwargs):
+    fname_texture_parent = kwargs.get('fname_texture_parent', None)
+    fname_texture_child = kwargs.get('fname_texture_child',   None)
+    fname_domain        = kwargs.get('fname_domain',        None)
+    verbose       = kwargs.get('verbose',       False)
+    overwrite     = kwargs.get('overwrite',     False)
+    if verbose: print('calling break_soil_texture')
+    if not os.path.isfile(fname_texture_child) or overwrite:
+        crs = pyogrio.read_info(fname_texture_parent)['crs']
+        domain = geopandas.read_file(fname_domain).to_crs(crs)
+        soil_texture = geopandas.read_file(fname_texture_parent, 
+                                           bbox=tuple(domain.geometry.total_bounds), 
+                                           engine="pyogrio")
+        soil_texture = geopandas.clip(gdf=soil_texture,mask=domain)
+        soil_texture.to_file(fname_texture_child, driver="GPKG")
+    else:
+        if verbose: print(f' found existing soil texture file {fname_texture_child}')
+
+async def download_soil_texture(**kwargs):
     fname_texture = kwargs.get('fname_texture', None)
     domain        = kwargs.get('domain',        None)
     domain_buf    = kwargs.get('domain_buf',    None)
     verbose       = kwargs.get('verbose',       False)
     overwrite     = kwargs.get('overwrite',     False)
-    fname_verbose      = kwargs.get('fname_verbose',         None)
-    if fname_verbose is not None:
-        f = open(fname_verbose, "a", buffering=1)
-        sys.stdout = f
-        sys.stderr = f
     if verbose: print(f'calling set_soil_texture')
     if not os.path.isfile(fname_texture) or overwrite:
         if verbose: print(f' using soildb to download soil texture and saving to {fname_texture}')
@@ -52,10 +65,6 @@ async def set_soil_texture(**kwargs):
         soilsgdf.to_file(fname_texture, driver="GPKG")
     else:
         if verbose: print(f' found existing soil texture file {fname_texture}')
-    if fname_verbose is not None:
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-        f.close()
 
 def set_soil_transmissivity(**kwargs):
     fname_texture        = kwargs.get('fname_texture', None)
@@ -63,11 +72,6 @@ def set_soil_transmissivity(**kwargs):
     fname_transmissivity = kwargs.get('fname_transmissivity', None)
     verbose              = kwargs.get('verbose',       False)
     overwrite            = kwargs.get('overwrite',     False)
-    fname_verbose      = kwargs.get('fname_verbose',         None)
-    if fname_verbose is not None:
-        f = open(fname_verbose, "a", buffering=1)
-        sys.stdout = f
-        sys.stderr = f
     if verbose: print('calling set_soil_transmissivity')
     if not os.path.isfile(fname_transmissivity) or overwrite:
         if verbose: print(f' creating {fname_transmissivity} from {fname_texture}')
@@ -87,31 +91,24 @@ def set_soil_transmissivity(**kwargs):
                             'organic'        :2.5}
         soil_texture = geopandas.read_file(fname_texture)
         def calc_f(row):
-            if    row['texture'] in dt_transmissivity: return dt_transmissivity[row['texture']]
+            if    row['texture'] in dt_transmissivity: return dt_transmissivity[str(row['texture']).lower()]
             else: return numpy.mean(list(dt_transmissivity.values()))
         soil_texture['f'] = soil_texture.apply(calc_f, axis=1)
-        with rioxarray.open_rasterio(fname_dem,masked=True) as riox_ds_dem:
+        with rioxarray.open_rasterio(fname_dem,masked=True,chucks='auto') as riox_ds_dem:
             soil_texture = soil_texture.to_crs(riox_ds_dem.rio.crs)
             soil_texture_grid = make_geocube(vector_data=soil_texture,
                                             like=riox_ds_dem,
                                             measurements=['f'])
             soil_texture_grid["f"] = soil_texture_grid["f"].astype("float32")
-            soil_texture_grid['f'].rio.to_raster(fname_transmissivity)
-            riox_ds_trns = rioxarray.open_rasterio(fname_transmissivity,masked=True)
-            mask = riox_ds_trns.isnull() & riox_ds_dem.notnull()
-            nancount = int(mask.sum())
-            tot      = int(riox_ds_dem.count().compute())
-            percnan  = float((nancount / tot) * 100.)
-            nanmean  = float(riox_ds_trns.mean(skipna=True))
+            mask = soil_texture_grid.isnull() & ~riox_ds_dem.isnull()
+            nancount = float(mask.sum().compute().f)
+            tot      = float(~riox_ds_dem.isnull().sum().compute())
+            percnan  = (nancount / tot) * 100.
+            nanmean  = float(soil_texture_grid.mean(skipna=True).f)
             if verbose and nancount > 0: 
                 print(f' WARNING : {nancount} of {tot} cells (~{percnan:.2f}% of domain) had nan transmissivity - filling with grid mean value {nanmean}')
             soil_texture_grid = soil_texture_grid.where(~mask, nanmean)
             soil_texture_grid = soil_texture_grid.transpose('band', 'y', 'x')
-            riox_ds_trns.close()
             soil_texture_grid['f'].rio.to_raster(fname_transmissivity)
     else:
         if verbose: print(f' using existing transmissivity data {fname_transmissivity}')
-    if fname_verbose is not None:
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-        f.close()

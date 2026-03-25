@@ -130,7 +130,11 @@ def break_conus1_tiffs(**kwargs):
             if not os.path.isfile(fname_in):
                 raise Exception(f'break_conus1_tiffs could not find conus1 file {fname_in}')
             with rioxarray.open_rasterio(fname_in, masked=True, chunks={'band':1,'x':500,'y':500}) as riox_i:                    
-                wtd_dt = riox_i.rio.clip([geom],riox_i.rio.crs,from_disk=True)
+                wtd_dt = riox_i.rio.clip(geometries  = [geom],
+                                         crs         = riox_i.rio.crs,
+                                         all_touched = True, 
+                                         drop        = True, 
+                                         from_disk   = True)
                 wtd_dt.rio.to_raster(fname_out,compress='LZMA')
         idt += datetime.timedelta(days=1)
     if fname_verbose is not None:

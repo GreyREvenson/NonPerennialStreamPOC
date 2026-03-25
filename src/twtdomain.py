@@ -66,6 +66,7 @@ def _set_domain_byhucid(**kwargs):
     domain = hucs.byids(colnam, domain_hucid, return_geom=True)
     domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
     domain = domain.rename(columns = {colnam : 'domain_id'})
+    domain.geometry = domain.geometry.force_2d()
     os.makedirs(name=os.path.dirname(fname_domain),exist_ok=True)
     domain.to_file(fname_domain, driver='GPKG')
     return domain
@@ -99,6 +100,7 @@ def _set_domain_bylatlonandhuclvl(**kwargs):
     hucs   = pygeohydro.WBD(colnam)
     domain = hucs.bygeom(geom)
     domain = domain.drop(columns=[col for col in domain.columns if col not in [colnam,'geometry']]) 
+    domain.geometry = domain.geometry.force_2d()
     os.makedirs(name=os.path.dirname(fname_domain),exist_ok=True)
     domain.to_file(fname_domain, driver='GPKG')
     return domain
@@ -109,7 +111,8 @@ def get_conus1_hucs(**kwargs):
     huc_lvl           = kwargs.get('huc_lvl',           8)
     verbose           = kwargs.get('verbose',           False)
     if not os.path.isfile(fname_domain_hucs):
-        fname_wb_full_temp = os.path.join(os.path.dirname(fname_domain_hucs),f'wb_full_huc{huc_lvl}.gpkg')
+        fname_wb_full_temp = str(os.path.join(os.path.dirname(fname_domain_hucs),
+                                              f'wb_full_huc{str(huc_lvl)}.gpkg'))
         if os.path.isfile(fname_wb_full_temp): 
             wb_full = geopandas.read_file(fname_wb_full_temp)
         else:
@@ -120,6 +123,7 @@ def get_conus1_hucs(**kwargs):
         domain_hucs = domain_hucs[~domain_hucs['states'].str.contains('CN')]
         domain_hucs = domain_hucs[domain_hucs['name'] != 'Lake Michigan']
         domain_hucs = domain_hucs.drop(columns=[col for col in domain_hucs.columns if col not in [f'huc{huc_lvl}','geometry']]) 
+        domain_hucs.geometry = domain_hucs.geometry.force_2d()
         domain_hucs.to_file(fname_domain_hucs,driver='GPKG')
     else:
         domain_hucs = geopandas.read_file(fname_wb_full_temp)

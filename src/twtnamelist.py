@@ -26,11 +26,13 @@ class Namelist:
         nhdp                    = None
         dem                     = None
         dem_breached            = None
+        dem_namelist_input      = None
         facc_ncells             = None
         facc_sca                = None
         stream_mask             = None
         slope                   = None
         conus1_domain           = None
+        soil_texture_namelist_input = None
 
     class Options:
         domain_hucid            = None    
@@ -256,5 +258,25 @@ class Namelist:
         name_var = 'usedask'
         if name_var in userinput and str(userinput[name_var]).upper().find('TRUE') != -1:
             self.options.usedask = True
+        #
+        #
+        name_var = 'dem'
+        if name_var in userinput:
+            try:
+                self.fnames.dem_namelist_input = userinput[name_var]
+                if not os.path.isfile(self.fnames.dem_namelist_input):
+                    sys.exit(f'ERROR specified dem file {self.fnames.dem_namelist_input} does not exist {fname_yaml_input}')
+            except ValueError:
+                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
+        #
+        #
+        name_var = 'soil_texture'
+        if name_var in userinput:
+            try:
+                self.fnames.soil_texture_namelist_input = userinput[name_var]
+                if not os.path.isfile(self.fnames.soil_texture_namelist_input):
+                    sys.exit(f'ERROR specified soil texture file {self.fnames.soil_texture_namelist_input} does not exist {fname_yaml_input}')
+            except ValueError:
+                sys.exit(f'ERROR invalid {name_var} {userinput[name_var]} in {fname_yaml_input}')
 
         
