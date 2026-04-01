@@ -20,10 +20,10 @@ async def calculate(fname_namelist):
     namelist = twtnamelist.Namelist(filename=fname_namelist)
     #
     #
-    if namelist.options.usedask:
-        chunks = {'band':1, 'x': 1000, 'y': 1000}
-        if namelist.options.verbose:
-            print(f'using dask with chunks {chunks}')
+    #if namelist.options.usedask:
+    #chunks = {"y": 2048, "x": 2048}
+    #if namelist.options.verbose:
+    #    print(f'using dask with chunks {chunks}')
     #
     #
     kwargs = {'fname_domain' : namelist.fnames.domain,
@@ -167,22 +167,21 @@ async def calculate(fname_namelist):
               'domain'        : domain,
               'verbose'       : namelist.options.verbose,
               'overwrite'     : namelist.options.overwrite}
-    try:
-        twtstreams.set_streams(**kwargs)
-    except Exception as e:
-        print(f'WARNING: failed to get NHD stream lines with error {e}')
+    #try:
+    #    twtstreams.set_streams(**kwargs)
+    #except Exception as e:
+    #    print(f'WARNING: failed to get NHD stream lines with error {e}')
     #
     #
     kwargs = {'dt_start'                  : namelist.time.start_date,
               'dt_end'                    : namelist.time.end_date,
               'wtd_raw_dir'               : namelist.dirnames.wtd_raw,
               'inundation_out_dir'        : namelist.dirnames.output_raw,
-              'fname_soil_transmissivity' : namelist.fnames.soil_transmissivity,
+              'fname_soil_trans'          : namelist.fnames.soil_transmissivity,
               'fname_twi'                 : namelist.fnames.twi,
               'fname_twi_mean'            : namelist.fnames.twi_mean,
               'verbose'                   : namelist.options.verbose,
               'overwrite'                 : namelist.options.overwrite}
-    if namelist.options.usedask:  kwargs.update({'chunks':chunks})
     twtcalc.calculate_inundation(**kwargs)
     #
     #
@@ -193,7 +192,6 @@ async def calculate(fname_namelist):
               'fname_dem'                 : namelist.fnames.dem_breached,
               'verbose'                   : namelist.options.verbose,
               'overwrite'                 : namelist.options.overwrite}
-    if namelist.options.usedask: kwargs.update({'chunks':chunks})
     fname_perc_inundated = twtcalc.calculate_summary_perc_inundated(**kwargs)
     #
     #
@@ -201,7 +199,6 @@ async def calculate(fname_namelist):
               'fname_strm_mask'           : namelist.fnames.stream_mask,
               'verbose'                   : namelist.options.verbose,
               'overwrite'                 : namelist.options.overwrite}
-    if namelist.options.usedask:  kwargs.update({'chunks':chunks})
     twtcalc.calculate_strm_permanence(**kwargs)
     #
     #
@@ -218,27 +215,16 @@ def calculate_async_wrapper(**kwargs):
     #
     fname_verbose  = os.path.join(os.path.dirname(fname_namelist),
                                   f"verbose_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.txt")
+    print(f'processing {fname_namelist}')
     f = open(fname_verbose, "a", buffering=1)
     sys.stdout = f
     sys.stderr = f
-    #
-    #
-    #usedask = kwargs.get('usedask',False)
-    #if usedask:
-    #    cluster = LocalCluster()
-    #    client = cluster.get_client()
-    #    print(f"dask dashboard link: {client.dashboard_link}")
     #
     #
     try:
         asyncio.run(calculate(fname_namelist))
     except Exception as e:
         print(str(e))
-    #
-    #
-    #if usedask:
-    #    client.close()
-    #    cluster.close()
     #
     #
     sys.stdout = sys.__stdout__

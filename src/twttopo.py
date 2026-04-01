@@ -113,26 +113,28 @@ def breach_dem(**kwargs):
             dem=fname_dem, 
             output=fname_filled, 
         )
-        cmd = [
-            os.path.join(wbt.exe_path,wbt.exe_name),
-            "-r=breach_depressions_least_cost",
-            f"--dem={fname_filled}",
-            f"--output={fname_dem_breached}",
-            f"--dist={int(1000)}",
-        ]
-        if verbose:
-            cmd.append("--verbose")
-        # 15-minute timeout (900 seconds)
-        result = subprocess.run(
-            cmd,
-            check=True,
-            timeout=900,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        try:
+            cmd = [
+                os.path.join(wbt.exe_path,wbt.exe_name),
+                "-r=breach_depressions_least_cost",
+                f"--dem={fname_filled}",
+                f"--output={fname_dem_breached}",
+                f"--dist={int(1000)}",
+            ]
+            if verbose:
+                cmd.append("--verbose")
+            result = subprocess.run(
+                cmd,
+                check=True,
+                timeout=900,
+                text=True,
+            )
+        except subprocess.TimeoutExpired:
+            if verbose: print(" breach least cost timeout reached (15 min)")
+        except Exception as e:
+            if verbose: print(f" WARNING breach least cost failed with message {e}")
         if not os.path.isfile(fname_dem_breached): 
-            print(" WARNING breach least cost did not finish within time limit (15 min). Will use fill depressions tool instead")
+            print(" WARNING using less preferable fill depressions algorithm")
             wbt.fill_depressions(
                 dem=fname_filled, 
                 output=fname_dem_breached, 
@@ -141,51 +143,6 @@ def breach_dem(**kwargs):
         os.remove(fname_filled)
     else:
         if verbose: print(f' found existing breached dem {fname_dem_breached}')
-
-def breach_dem_old(**kwargs):
-    fname_dem_breached = kwargs.get('fname_dem_breached', None)
-    fname_dem          = kwargs.get('fname_dem',          None)
-    verbose            = kwargs.get('verbose',            False)
-    overwrite          = kwargs.get('overwrite',          False)
-    if verbose: print('calling breach_dem')
-    if fname_dem is None:
-        raise KeyError('breach_dem missing required argument fname_dem')
-    if not os.path.isfile(fname_dem):
-        raise ValueError(f'breach_dem could not find fname_dem {fname_dem}')
-    if not os.path.isfile(fname_dem_breached) or overwrite:
-        if verbose: print(f' using whitebox to breach dem and writing to {fname_dem_breached}')
-        wbt = whitebox.WhiteboxTools()
-        fname_filled = fname_dem.replace('.tif','_fill.tif')
-        wbt.breach_single_cell_pits(
-            dem=fname_dem, 
-            output=fname_filled, 
-        )
-        def bdlc_wrapper(fn_filled,fn_breached):
-            wbt.breach_depressions_least_cost(
-                dem    = fn_filled,
-                output = fn_breached,
-                dist   = 1000
-            )
-        params = {
-            "fn_filled": fname_filled,
-            "fn_breached": fname_dem_breached
-        }
-        p = multiprocessing.Process(target=bdlc_wrapper, kwargs=params)
-        p.start()
-        p.join(timeout=900)
-        if p.is_alive():
-            if verbose: print(" breach least cost timeout reached (15 min). Killing process...")
-            p.terminate()
-            p.join()
-            if verbose: print(" process terminated.")
-            wbt.fill_depressions(
-                dem=fname_filled, 
-                output=fname_dem_breached, 
-                fix_flats=True, 
-            )
-        os.remove(fname_filled)
-    else:
-        if verbose: print(f' using existing breached dem {fname_dem_breached}')
 
 def set_flow_acc(**kwargs):
     fname_dem_breached = kwargs.get('fname_dem_breached', None)

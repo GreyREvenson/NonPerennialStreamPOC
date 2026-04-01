@@ -1,5 +1,13 @@
-
-import os,numpy,shutil,datetime,rioxarray,xarray
+import os
+import shutil
+import datetime
+import rioxarray
+import xarray as xr
+import zipfile
+from rasterio.enums import Resampling
+import numpy as np
+import rasterio
+from rasterio import warp
 
 def calculate_strm_permanence(
     *,
@@ -7,8 +15,7 @@ def calculate_strm_permanence(
     fname_strm_mask=None,
     verbose=False,
     overwrite=False,
-    compress="LZW",            # unused; kept for API compatibility
-    atol=1e-6                  # tolerance for treating 100% as perennial
+    atol=1e-6 # tolerance for treating 100% as perennial
 ):
     """
     In-memory stream permanence computation
@@ -62,26 +69,26 @@ def calculate_strm_permanence(
 
     # Normalize nodata to NaN using nodata values from rioxarray
     nd_perc = perc_da.rio.nodata
-    if nd_perc is not None and not (isinstance(nd_perc, float) and numpy.isnan(nd_perc)):
-        perc_da = perc_da.where(perc_da != nd_perc, other=numpy.nan)
+    if nd_perc is not None and not (isinstance(nd_perc, float) and np.isnan(nd_perc)):
+        perc_da = perc_da.where(perc_da != nd_perc, other=np.nan)
 
     nd_mask = mask_da.rio.nodata
-    if nd_mask is not None and not (isinstance(nd_mask, float) and numpy.isnan(nd_mask)):
-        mask_da = mask_da.where(mask_da != nd_mask, other=numpy.nan)
+    if nd_mask is not None and not (isinstance(nd_mask, float) and np.isnan(nd_mask)):
+        mask_da = mask_da.where(mask_da != nd_mask, other=np.nan)
 
     # Build boolean stream mask: True where mask == 1 (NaNs -> False)
     stream_mask_bool = (mask_da == 1)
 
     # Restrict perc to streams; outside -> NaN
-    perc_on_streams = perc_da.where(stream_mask_bool, other=numpy.nan)
+    perc_on_streams = perc_da.where(stream_mask_bool, other=np.nan)
 
     # Perennial where approx 100% within tolerance (NaNs evaluate to False)
-    is_perennial = numpy.isfinite(perc_on_streams) & (numpy.abs(perc_on_streams - 100.0) <= atol)
-    perennial_da = xarray.where(is_perennial, 1.0, numpy.nan).astype("float32")
+    is_perennial = np.isfinite(perc_on_streams) & (np.abs(perc_on_streams - 100.0) <= atol)
+    perennial_da = xr.where(is_perennial, 1.0, np.nan).astype("float32")
 
     # Non-perennial where on streams, finite, >0 and not perennial
-    nonperennial_mask = stream_mask_bool & numpy.isfinite(perc_da) & (perc_da > 0.0) & (~is_perennial)
-    nonperennial_da = xarray.where(nonperennial_mask, perc_da, numpy.nan).astype("float32")
+    nonperennial_mask = stream_mask_bool & np.isfinite(perc_da) & (perc_da > 0.0) & (~is_perennial)
+    nonperennial_da = xr.where(nonperennial_mask, perc_da, np.nan).astype("float32")
 
     # Preserve georeferencing from percent grid and clear nodata tag (use NaNs)
     perennial_da = perennial_da.rio.write_crs(perc_da.rio.crs, inplace=False)
@@ -101,215 +108,332 @@ def calculate_strm_permanence(
 
     return fname_p, fname_np
 
-def calculate_summary_perc_inundated(**kwargs):
-    """
-    Calculates the percent of days inundated for a date range and writes a GeoTIFF.
-
-    kwargs:
-      dt_start (datetime): inclusive start date
-      dt_end   (datetime): exclusive end date
-      inundation_raw_dir (str): directory with daily inundation_{YYYYMMDD}.tiff
-      inundation_summary_dir (str): output directory
-      fname_dem (str): template raster for grid/CRS/mask
-      verbose (bool): print progress
-      overwrite (bool): overwrite existing output
-
-    Returns:
-      str: path to the output GeoTIFF
-    """
-    dt_start           = kwargs.get("dt_start", None)
-    dt_end             = kwargs.get("dt_end", None)
-    inundation_raw_dir = kwargs.get("inundation_raw_dir", None)
-    inundation_sum_dir = kwargs.get("inundation_summary_dir", None)
-    fname_dem          = kwargs.get("fname_dem", None)
-    verbose            = kwargs.get("verbose", False)
-    overwrite          = kwargs.get("overwrite", False)
-
-    # Validation
-    if not (dt_start and dt_end and inundation_raw_dir and inundation_sum_dir and fname_dem):
-        raise ValueError("Missing required kwarg(s): dt_start, dt_end, inundation_raw_dir, inundation_summary_dir, fname_dem.")
-    if dt_end <= dt_start:
-        raise ValueError("dt_end must be greater than dt_start (exclusive end).")
-
-    os.makedirs(inundation_sum_dir, exist_ok=True)
-    fname_output = os.path.join(
-        inundation_sum_dir,
-        f"percent_inundated_grid_{dt_start.strftime('%Y%m%d')}_to_{dt_end.strftime('%Y%m%d')}.tiff",
-    )
-
-    if os.path.isfile(fname_output) and not overwrite:
-        if verbose:
-            print(f"found existing summary percent inundation grid {fname_output}")
-        return fname_output
-
-    if verbose:
-        print("calling calculate_summary_perc_inundated")
-        print(f"writing summary percent inundation grid {fname_output}")
-
-    # Load DEM as template (and close the file)
-    with rioxarray.open_rasterio(fname_dem, masked=True) as dem_da:
-        dem = dem_da.sel(band=1).load()
-    dem_mask = dem.isnull().data  # boolean mask where DEM is nodata
-    height = dem.sizes.get("y")
-    width = dem.sizes.get("x")
-
-    # Accumulator (float32 for generality)
-    acc = numpy.zeros((height, width), dtype=numpy.float32)
-
-    # Iterate dates [dt_start, dt_end) and accumulate
-    total_days = 0
+def calculate_inundation_slow(
+    *,
+    dt_start: datetime.datetime,
+    dt_end: datetime.datetime,
+    wtd_raw_dir: str,
+    wtd_resampled_dir: str,
+    inundation_out_dir: str,
+    fname_twi: str,
+    fname_twi_mean: str,
+    fname_soil_trans: str,
+    verbose: bool = False,
+    overwrite: bool = False,
+):
+    #
+    #
+    if verbose: print('calling calculate_inundation_slow')
+    need = _check_exist(inundation_out_dir,dt_start,dt_end)
+    if not need:
+        if verbose: print( f' found existing inundation calculations in {inundation_out_dir}')
+        return
+    #
+    #
+    os.makedirs(inundation_out_dir, exist_ok=True)
+    twi         = rioxarray.open_rasterio(filename=fname_twi,masked=True)
+    twi_mean    = rioxarray.open_rasterio(filename=fname_twi_mean,masked=True)
+    twi_mean    = twi_mean.rio.reproject_match(twi, resampling=Resampling.bilinear)
+    soil_transm = rioxarray.open_rasterio(filename=fname_soil_trans,masked=True)
+    soil_transm = soil_transm.rio.reproject_match(twi, resampling=Resampling.bilinear)
+    #
+    #
+    if "band" in twi.dims and twi.sizes["band"] == 1:
+        twi = twi.squeeze("band", drop=True)
+    if "band" in twi_mean.dims and twi_mean.sizes["band"] == 1:
+        twi_mean = twi_mean.squeeze("band", drop=True)
+    if "band" in soil_transm.dims and soil_transm.sizes["band"] == 1:
+        soil_transm = soil_transm.squeeze("band", drop=True)
+    #
+    # 
+    threshold = xr.where(soil_transm != 0, - (twi - twi_mean) / soil_transm, np.nan)
+    threshold = threshold.astype("float32")
+    #
+    #
     idt = dt_start
-    while idt < dt_end:
-        dt_str = idt.strftime("%Y%m%d")
-        fpath = os.path.join(inundation_raw_dir, f"inundation_{dt_str}.tiff")
-        if not os.path.exists(fpath):
-            raise FileNotFoundError(f"Missing daily inundation file: {fpath}")
-
-        with rioxarray.open_rasterio(fpath, masked=True) as da:
-            inun = da.sel(band=1).load()
-
-        # Shape check
-        if inun.sizes.get("y") != height or inun.sizes.get("x") != width:
-            raise ValueError(
-                f"Raster shape mismatch for {fpath}: expected {width}x{height}, "
-                f"got {inun.sizes.get('x')}x{inun.sizes.get('y')}"
+    while idt <= dt_end:
+        dt_str             = idt.strftime('%Y%m%d')
+        fname_wtd_mean_raw = os.path.join(wtd_raw_dir,f'wtd_{dt_str}.tiff')
+        fname_inund        = os.path.join(inundation_out_dir,f'inundation_{dt_str}.tiff')
+        if not os.path.isfile(fname_wtd_mean_raw):
+            raise Exception(f'calculate_inundation could not find {fname_wtd_mean_raw}')
+        if not os.path.isfile(fname_inund) or overwrite:
+            if verbose: print(f' processing {dt_str}')
+            with rioxarray.open_rasterio(fname_wtd_mean_raw, masked=True) as rioxds_wtd_raw:
+                wtd_mean = rioxds_wtd_raw.rio.reproject_match(twi, resampling=Resampling.bilinear)
+            if "band" in wtd_mean.dims and wtd_mean.sizes["band"] == 1:
+                wtd_mean = wtd_mean.squeeze("band", drop=True)
+            wtd_mean = -wtd_mean
+            wtd_mean = xr.where(wtd_mean >= threshold, 1.0, np.nan)
+            wtd_mean = wtd_mean.astype("float32").rio.write_nodata(np.nan)
+            wtd_mean.rio.to_raster(
+                fname_inund,
+                compress="deflate",
+                tiled=True,
+                BIGTIFF="IF_SAFER",
             )
-
-        # Treat input nodata as 0 for summation
-        arr = inun.fillna(0).values.astype(numpy.float32, copy=False)
-        acc += arr
-
-        total_days += 1
-        if verbose and (total_days % 10 == 0):
-            print(f"  accumulated {total_days} rasters (latest: {dt_str})")
-
         idt += datetime.timedelta(days=1)
 
-    if total_days == 0:
-        raise ValueError("Empty date range (no days between dt_start and dt_end).")
+def _read_base_grid_and_array(fname):
+    """
+    Read the base grid (TWI) as float32 and return:
+    - arr: np.ndarray float32 (height, width), nodata -> np.nan
+    - profile: rasterio profile with transform, crs, width, height
+    """
+    with rasterio.open(fname) as src:
+        profile = src.profile.copy()
+        arr = src.read(1, out_dtype="float32")
+        nodata = src.nodata
+        if nodata is not None and not np.isnan(nodata):
+            arr[arr == nodata] = np.nan
+        # Ensure single band float32; do not store NaN as nodata in metadata
+        profile.update(
+            count=1,
+            dtype="float32",
+        )
+        # Remove nodata key if present; we will keep NaNs in data
+        profile.pop("nodata", None)
+    return arr, profile
 
-    # Compute percentage and apply masks
-    perc_np = (acc / float(total_days)) * 100.0
-    perc_np[perc_np <= 0.0] = numpy.nan       # set 0% to NaN
-    perc_np[dem_mask] = numpy.nan             # preserve DEM nodata
+def _reproject_to_target(src_path, dst_shape, dst_transform, dst_crs,
+                         resampling=Resampling.bilinear, num_threads=None, dst_dtype="float32"):
+    """
+    Reproject a raster (first band) to a given target grid. Returns np.ndarray float32 with NaNs as nodata.
+    """
+    with rasterio.open(src_path) as src:
+        dst = np.empty(dst_shape, dtype=dst_dtype)
+        warp.reproject(
+            source=rasterio.band(src, 1),
+            destination=dst,
+            src_transform=src.transform,
+            src_crs=src.crs,
+            src_nodata=src.nodata,
+            dst_transform=dst_transform,
+            dst_crs=dst_crs,
+            dst_nodata=np.nan,
+            resampling=resampling,
+            num_threads=(num_threads or os.cpu_count() or 1),
+        )
+    return dst
 
-    # Build output DataArray preserving geospatial metadata from DEM
-    perc_da = dem.copy(data=perc_np.astype(numpy.float32))
-    perc_da.rio.write_nodata(numpy.nan, inplace=True)
-
-    # Remove CF-encoding keys that can conflict during write
-    for key in ("_FillValue", "missing_value", "scale_factor", "add_offset"):
-        perc_da.attrs.pop(key, None)
-        perc_da.encoding.pop(key, None)
-    # Clear any leftover encoding to avoid serialization conflicts
-    perc_da.encoding = {}
-
-    # Write output
-    perc_da.rio.to_raster(
-        fname_output,
-        compress="LZW",
+def _write_geotiff(fname, 
+                   arr, 
+                   profile, 
+                   compress="deflate", 
+                   bigtiff="IF_SAFER",
+                   blocksize=512, 
+                   zlevel=1, 
+                   predictor=2):
+    """
+    Write a single-band float32 GeoTIFF with tiling and compression.
+    """
+    out_profile = profile.copy()
+    out_profile.update(
+        driver="GTiff",
+        compress=compress,
+        BIGTIFF=bigtiff,
+        tiled=True,
+        blockxsize=blocksize,
+        blockysize=blocksize,
     )
+    # Add codec-specific options
+    if compress in ("deflate", "zstd"):
+        out_profile["zlevel"] = zlevel
+        out_profile["predictor"] = predictor
+    elif compress in ("lzw",):
+        out_profile["predictor"] = predictor
+
+    # Remove None-valued keys to avoid GDAL warnings
+    out_profile = {k: v for k, v in out_profile.items() if v is not None}
+
+    with rasterio.open(fname, "w", **out_profile) as dst:
+        dst.write(arr, 1)
+
+def calculate_inundation(*,
+    dt_start: datetime.datetime,
+    dt_end: datetime.datetime,
+    wtd_raw_dir: str,
+    inundation_out_dir: str,
+    fname_twi: str,
+    fname_twi_mean: str,
+    fname_soil_trans: str,
+    wtd_resampled_dir: str = None,
+    verbose: bool = False,
+    overwrite: bool = False,
+    resampling=Resampling.bilinear,
+    warp_threads: int | None = 4,
+    compress: str | None = "deflate",
+    blocksize: int = 512,
+    zlevel: int = 1,
+    predictor: int = 2):
 
     if verbose:
-        print(f"wrote {fname_output}")
+        print('calling calculate_inundation')
 
-    return fname_output
-
-def calculate_inundation(
-    *,
-    dt_start,
-    dt_end,
-    wtd_raw_dir,
-    inundation_out_dir,
-    fname_twi,
-    fname_twi_mean,
-    fname_soil_transmissivity,
-    wtd_resampled_dir=None,
-    verbose=False,
-    overwrite=False,
-    chunks=None,
-):
-    """
-    Compute inundation rasters for dt_start..dt_end inclusive using rioxarray only.
-
-    Inundation is 1 where: WTD_resampled <= (twi - twi_mean) / soil_transmissivity, else 0.
-
-    Notes:
-      - Precomputes the static term (twi - twi_mean) / soil_transmissivity once per run.
-      - Uses nearest-neighbor resampling by default (no rasterio imports); if you must use bilinear,
-        you'll need to allow rasterio enums, or accept the nearest-neighbor default here.
-    """
-    if verbose:
-        print("calling calculate_inundation (rioxarray-only)")
-
-    do_calc = overwrite or _check_exist(inundation_out_dir, dt_start, dt_end)
-    if not do_calc:
+    need = _check_exist(inundation_out_dir, dt_start, dt_end)
+    if not need:
         if verbose:
-            print(f"found existing inundation calculations in {inundation_out_dir}")
+            print(f' found existing inundation calculations in {inundation_out_dir}')
         return
 
-    if verbose:
-        print(f"writing output to {inundation_out_dir}")
     os.makedirs(inundation_out_dir, exist_ok=True)
-    if wtd_resampled_dir is not None:
-        os.makedirs(wtd_resampled_dir, exist_ok=True)
-    #
-    #
-    twi = rioxarray.open_rasterio(filename=fname_twi, masked=True, chunks=chunks).sel(band=1)
-    twi_mean = rioxarray.open_rasterio(filename=fname_twi_mean, masked=True, chunks=chunks).sel(band=1)
-    soil_transm = rioxarray.open_rasterio(filename=fname_soil_transmissivity, masked=True, chunks=chunks).sel(band=1)
-    twi_mean = twi_mean.rio.reproject_match(twi)
-    soil_transm = soil_transm.rio.reproject_match(twi)
-    if twi.dtype != numpy.float32:
-        twi = twi.astype(numpy.float32)
-    if twi_mean.dtype != numpy.float32:
-        twi_mean = twi_mean.astype(numpy.float32)
-    if soil_transm.dtype != numpy.float32:
-        soil_transm = soil_transm.astype(numpy.float32)
-    #
-    #
-    threshold = (twi - twi_mean) / soil_transm # Static threshold reused for all days
-    #
-    #
-    idt = dt_start
-    one_day = datetime.timedelta(days=1)
-    while idt <= dt_end:
-        #
-        #
-        dt_str = idt.strftime("%Y%m%d")
-        if verbose: print(f' processing {dt_str}')
-        fname_wtd_raw = os.path.join(wtd_raw_dir, f"wtd_{dt_str}.tiff")
-        fname_inund = os.path.join(inundation_out_dir, f"inundation_{dt_str}.tiff")
-        if not os.path.isfile(fname_wtd_raw):
-            raise FileNotFoundError(f"calculate_inundation could not find {fname_wtd_raw}")
-        #
-        #
-        if overwrite or (not os.path.isfile(fname_inund)):
-            with rioxarray.open_rasterio(fname_wtd_raw, masked=True, chunks=chunks) as wtd_da:
-                wtd_da = wtd_da.squeeze(drop=True)
-                wtd_resampled = wtd_da.rio.reproject_match(twi)  # default resampling
-            inund = (wtd_resampled <= threshold).astype(numpy.uint8) # Inundation mask: 1 where condition holds, else 0
-            inund.rio.write_crs(twi.rio.crs, inplace=True)
-            inund.rio.write_nodata(0, inplace=True)
-            inund.rio.to_raster(fname_inund)
-            if wtd_resampled_dir is not None:
-                fname_wtd_resampled = os.path.join(wtd_resampled_dir, f"wtd_{dt_str}.tiff")
-                wtd_resampled.rio.write_crs(twi.rio.crs, inplace=True)
-                wtd_resampled.rio.to_raster(fname_wtd_resampled)
-        idt += one_day
-    if verbose:
-        print("calculate_inundation completed.")
 
-def _zip_iundation(dt):
-    domain = dt['domain']
-    dirraw = os.path.join(domain.iloc[0]['output'],'raw')
-    try:
-        if os.path.isdir(dirraw) and len(os.listdir(dirraw)) > 0:
-            shutil.make_archive(dirraw, 'zip', dirraw)
-            shutil.rmtree(dirraw)
-        return None
-    except Exception as e:
-        return e
+    # Enable multi-threaded GDAL inside each reprojection
+    gdal_env = rasterio.Env(GDAL_NUM_THREADS="ALL_CPUS", NUM_THREADS="ALL_CPUS")
+
+    with gdal_env:
+        # 1) Read/define target grid from TWI
+        twi_arr, base_profile = _read_base_grid_and_array(fname_twi)
+        height = base_profile['height']
+        width  = base_profile['width']
+        dst_transform = base_profile['transform']
+        dst_crs = base_profile['crs']
+        dst_shape = (height, width)
+
+        # 2) Reproject twi_mean and soil_trans to target grid
+        twi_mean_arr = _reproject_to_target(
+            fname_twi_mean, dst_shape, dst_transform, dst_crs,
+            resampling=resampling, num_threads=warp_threads, dst_dtype="float32"
+        )
+        soil_trans_arr = _reproject_to_target(
+            fname_soil_trans, dst_shape, dst_transform, dst_crs,
+            resampling=resampling, num_threads=warp_threads, dst_dtype="float32"
+        )
+
+        # 3) Compute threshold once: threshold = -(twi - twi_mean) / soil_trans, soil_trans != 0 else NaN
+        with np.errstate(divide='ignore', invalid='ignore'):
+            threshold = np.where(
+                soil_trans_arr != 0.0,
+                -(twi_arr - twi_mean_arr) / soil_trans_arr,
+                np.nan
+            ).astype(np.float32)
+
+        # 4) Sequentially process each day
+        idt = dt_start
+        while idt <= dt_end:
+            dt_str = idt.strftime('%Y%m%d')
+            fname_wtd_mean_raw = os.path.join(wtd_raw_dir, f'wtd_{dt_str}.tiff')
+            fname_inund        = os.path.join(inundation_out_dir, f'inundation_{dt_str}.tiff')
+
+            if not os.path.isfile(fname_wtd_mean_raw):
+                raise FileNotFoundError(f'calculate_inundation could not find {fname_wtd_mean_raw}')
+
+            if not os.path.isfile(fname_inund) or overwrite:
+                if verbose:
+                    print(f' processing {dt_str}')
+
+                # Reproject WTD to target grid
+                wtd_arr = _reproject_to_target(
+                    fname_wtd_mean_raw, dst_shape, dst_transform, dst_crs,
+                    resampling=resampling, num_threads=warp_threads, dst_dtype="float32"
+                )
+
+                # Apply logic: wtd_mean = -wtd; inundation = 1.0 where wtd_mean >= threshold, else NaN
+                wtd_mean = -wtd_arr
+                out = np.full(dst_shape, np.nan, dtype=np.float32)
+                valid = (~np.isnan(wtd_mean)) & (~np.isnan(threshold))
+                out[valid & (wtd_mean >= threshold)] = 1.0
+
+                # Write result
+                _write_geotiff(
+                    fname_inund, out, base_profile,
+                    compress=compress, bigtiff="IF_SAFER",
+                    blocksize=blocksize, zlevel=zlevel, predictor=predictor
+                )
+
+            idt += datetime.timedelta(days=1)
+
+def calculate_summary_perc_inundated(**kwargs):
+    dt_start           = kwargs.get('dt_start',               None)
+    dt_end             = kwargs.get('dt_end',                 None)
+    inundation_raw_dir = kwargs.get('inundation_raw_dir',     None)
+    inundation_sum_dir = kwargs.get('inundation_summary_dir', None)
+    fname_dem          = kwargs.get('fname_dem',              None)
+    verbose            = kwargs.get('verbose',                False)
+    overwrite          = kwargs.get('overwrite',              False)
+
+    if verbose:
+        print('calling calculate_summary_perc_inundated')
+    os.makedirs(inundation_sum_dir, exist_ok=True)
+
+    dt_fmt = "%Y%m%d"
+    start_s = dt_start.strftime(dt_fmt)
+    end_s   = dt_end.strftime(dt_fmt)
+    n_days = (dt_end - dt_start).days + 1
+    fname_output = os.path.join(
+        inundation_sum_dir,
+        f"percent_inundated_grid_{start_s}_to_{end_s}.tiff"
+    )
+    if os.path.isfile(fname_output) and not overwrite:
+        if verbose:
+            print(f' found existing summary percent inundated grid {fname_output}')
+        return fname_output
+    if verbose:
+        print(f' writing summary percent inundation grid {fname_output}')
+
+    # Read base grid once
+    with rasterio.open(fname_dem) as src:
+        base_profile = src.profile.copy()
+        sumgrid_data = src.read(1, out_dtype="int32")
+        sumgrid_data[:] = 0  # Initialize to zeros
+
+    # Accumulate inundation counts
+    idt = dt_start
+    while idt <= dt_end:
+        dt_str = idt.strftime(dt_fmt)
+        fname_inund_dti = os.path.join(inundation_raw_dir, f'inundation_{dt_str}.tiff')
+        
+        with rasterio.open(fname_inund_dti) as src:
+            inun_data = src.read(1, out_dtype="int32")
+            # Replace NaN with 0 directly in the array
+            inun_data = np.nan_to_num(inun_data, nan=0.0).astype(np.int32)
+            sumgrid_data += inun_data
+        
+        idt += datetime.timedelta(days=1)
+
+    # Convert to percentage
+    scale = 100.0 / float(n_days)
+    perc_inun = sumgrid_data.astype(np.float32) * scale
+    perc_inun[perc_inun <= 0.0] = np.nan
+
+    # Write output
+    _write_geotiff(fname_output, perc_inun, base_profile)
+    
+    return fname_output
+
+def _zip_inundation(raw_dir, compression=zipfile.ZIP_LZMA, compresslevel=9):
+    """
+    Create a ZIP archive of 'raw_dir' including the directory itself as the top-level entry,
+    then remove the original directory.
+
+    Parameters:
+        raw_dir       : path to the 'raw' directory
+        compression   : zipfile compression (e.g., ZIP_STORED, ZIP_DEFLATED, ZIP_BZIP2, ZIP_LZMA)
+        compresslevel : int or None; higher is smaller/slower (supported for DEFLATED/BZIP2/LZMA)
+
+    Returns:
+        - Path to the created ZIP file (string) if a ZIP is created.
+        - None if the directory does not exist or is empty.
+
+    Notes:
+        - ZIP_DEFLATED is widely compatible; BZIP2/LZMA can compress smaller but may not open in all tools.
+    """
+    abs_raw = os.path.abspath(raw_dir)
+    parent = os.path.dirname(abs_raw)
+    zip_path = abs_raw + '.zip'
+    kwargs = {}
+    if compresslevel is not None:
+        kwargs['compresslevel'] = compresslevel
+    with zipfile.ZipFile(zip_path, mode='w', compression=compression, **kwargs) as zf:
+        for dirpath, dirnames, filenames in os.walk(abs_raw):
+            rel_dir = os.path.relpath(dirpath, parent)
+            zf.write(dirpath, arcname=rel_dir)
+            for name in filenames:
+                full_path = os.path.join(dirpath, name)
+                arcname = os.path.relpath(full_path, parent)
+                zf.write(full_path, arcname=arcname)
+    shutil.rmtree(abs_raw)
+    return zip_path
 
 def _check_exist(inundation_out_dir:str,dt_start:datetime.datetime,dt_end:datetime.datetime):
     idt = dt_start
