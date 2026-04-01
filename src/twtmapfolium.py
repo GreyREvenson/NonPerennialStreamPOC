@@ -2,38 +2,26 @@ import os,sys,twtnamelist,folium,geopandas,branca,numpy,rasterio,rasterio.warp,r
 
 class twtfoliummap(folium.Map):
 
-    def __init__(self,namelist:twtnamelist.Namelist,*args,**kwargs):
+    def __init__(self,nl:twtnamelist.Namelist,*args,**kwargs):
         super().__init__(*args, **kwargs)
-        if 'domain_id' in kwargs:
-            self.domain_id = kwargs['domain_id']
-        elif 'domainid' in kwargs:
-            self.domain_id = kwargs['domainid']
-        else:
-            domain = geopandas.read_file(namelist.fnames.domain)
-            self.domain_id = domain['domain_id'].unique().tolist()[0]
-            if len(domain['domain_id'].unique().tolist()) != 1:
-                print(f'INFO folium map initialized without domain_id - using {self.domain_id}')
-        self._set_fnames(namelist=namelist)
-        if 'fname_boundary' in kwargs:
-            self._add_boundary(fname_boundary=kwargs['fname_boundary'])
-        else:
-            self._add_domain(namelist=namelist)
-            self._add_nhd()
+        self._set_fnames(nl=nl)
+        self._add_domain(nl=nl)
+        self._add_nhd()
 
-    def _set_fnames(self,namelist:twtnamelist.Namelist):
+    def _set_fnames(self,nl:twtnamelist.Namelist):
         """Set file names for various data layers"""
-        dstr                      = (namelist.time.datetime_dim[0].strftime('%Y%m%d')+'_to_'+
-                                     namelist.time.datetime_dim[len(namelist.time.datetime_dim)-1].strftime('%Y%m%d'))
-        dinput                    = os.path.join(namelist.dirnames.input,str(self.domain_id))
-        doutput                   = os.path.join(namelist.dirnames.output,str(self.domain_id),'summary')
-        self.fname_soil_texture   = os.path.join(dinput,'soil_texture.gpkg')
-        self.fname_transmissivity = os.path.join(dinput,'soil_transmissivity.tiff')
-        self.fname_nhd            = os.path.join(dinput,'nhd_hr.gpkg')
-        self.fname_twi            = os.path.join(dinput,'twi.tiff')
-        self.fname_slope          = os.path.join(dinput,'slope.tiff')
-        self.fname_flow_acc       = os.path.join(dinput,'flow_acc_sca.tiff')
-        self.fname_dem            = os.path.join(dinput,'dem.tiff')      
-        self.fname_dem_breached   = os.path.join(dinput,'dem_breached.tiff') 
+        dstr                      = (nl.time.datetime_dim[0].strftime('%Y%m%d')+'_to_'+
+                                     nl.time.datetime_dim[len(nl.time.datetime_dim)-1].strftime('%Y%m%d'))
+        dinput                    = nl.dirnames.input
+        doutput                   = nl.dirnames.output_summary
+        self.fname_soil_texture   = nl.fnames.soil_texture
+        self.fname_transmissivity = nl.fnames.soil_transmissivity
+        self.fname_nhd            = nl.fnames.nhdp
+        self.fname_twi            = nl.fnames.twi
+        self.fname_slope          = nl.fnames.slope
+        self.fname_flow_acc       = nl.fnames.facc_sca
+        self.fname_dem            = nl.fnames.dem      
+        self.fname_dem_breached   = nl.fnames.dem_breached 
         self.fname_percinundated  = os.path.join(doutput,"".join(['percent_inundated_grid_',dstr,'.tiff']))
         self.fname_meanwtd        = os.path.join(doutput,"".join(['mean_wtd_',dstr,'.tiff']))
         self.fname_nonperennial   = os.path.join(doutput,"".join(['nonperennial_strms_',dstr,'.tiff']))
@@ -78,11 +66,11 @@ class twtfoliummap(folium.Map):
         self._add_grid(name='DEM (m)',
                       fname=self.fname_dem,
                       cmap=branca.colormap.linear.Greys_07)
-        if not os.path.isfile(self.fname_dem_breached): 
-            sys.exit('ERROR get_fmap_dem could not find '+self.fname_dem_breached)
-        self._add_grid(name='DEM (breached) (m)',
-                      fname=self.fname_dem_breached,
-                      cmap=branca.colormap.linear.Greys_07)
+        #if not os.path.isfile(self.fname_dem_breached): 
+        #    sys.exit('ERROR get_fmap_dem could not find '+self.fname_dem_breached)
+        #self._add_grid(name='DEM (breached) (m)',
+        #              fname=self.fname_dem_breached,
+        #              cmap=branca.colormap.linear.Greys_07)
 
     def add_meanwtd(self,namelist:twtnamelist.Namelist):
         """Add mean wtd data to self"""
@@ -236,12 +224,11 @@ class twtfoliummap(folium.Map):
         html_legend += "</div>"
         self.get_root().html.add_child(folium.Element(html_legend))
 
-    def _add_domain(self,namelist:twtnamelist.Namelist):
+    def _add_domain(self,nl:twtnamelist.Namelist):
         """Add domain boundary to self"""
-        if not os.path.isfile(namelist.fnames.domain): 
-            sys.exit('ERROR _add_domain could not find '+namelist.fnames.domain)
-        domain = geopandas.read_file(namelist.fnames.domain)
-        domain = domain[domain['domain_id'] == str(self.domain_id)]
+        if not os.path.isfile(nl.fnames.domain): 
+            sys.exit('ERROR _add_domain could not find '+nl.fnames.domain)
+        domain = geopandas.read_file(nl.fnames.domain)
         domainfg = folium.FeatureGroup(name='Domain')
         for _, r in domain.iterrows():
             folium.GeoJson(data=geopandas.GeoSeries(r['geometry']).to_json(),
