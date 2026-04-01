@@ -1,26 +1,21 @@
-
-#
-# Overwrite/recreate intermediate data outputs
-overwrite: False
-#
-# Print additional model messages 
-verbose: True
-#
-# start date for analysis - must be within parflow simulation period
 start_date: '2002-10-01'
 #
-# end date for analysis - must be within parflow simulation period
 end_date: '2006-09-30'
 #
-# threshold for stream network identification via flow accumulation calculation - must be integer -- notes: 500,1000,5000,10000,50000,100000
-facc_strm_threshold: 1000
+facc_strm_threshold_ncells: 100
+# 
+usedask: False
+#
+overwrite: False
+#
+verbose: True
+#
+conus1_download_dir: C:\Users\GEVENSON\Data\parflow_conus1_domain\wtd\raw
+#
+dem: C:\Users\GEVENSON\Data\parflow_conus1_domain\dem_10m\parflow_conus1_domain_10m_dem.vrt
+#
+soil_texture: C:\Users\GEVENSON\Data\parflow_conus1_domain\ssurgo\parflow_conus1_domain_soils.gpkg
 #
 # hf_hydrodata credentials https://hf-hydrodata.readthedocs.io/en/latest/getting_started.html#creating-a-hydrogen-api-account
-hf_hydrodata_un: 'evenson.grey@epa.gov'
-hf_hydrodata_pin: '2234'
-
-dem_rez: 10
-
-n_cores: 35
-
-conus1_download_dir: 'U:\NonPerennialStreamPOC\examples\conus1\input\wtd\raw'
+#hf_hydrodata_un: ...
+#hf_hydrodata_pin: ...
